@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>7 &amp; Under — Receiving</title>
+<style>
+  :root{
+    --bg:#111412; --panel:#191d1a; --line:#2a2f2b;
+    --ink:#e8e6df; --dim:#9aa096;
+    --tag:#f5b02e;            /* Nellis price-tag amber: flags + primary action */
+    --ok:#7fbf6a; --bad:#e06c5a;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--bg);color:var(--ink);font:16px/1.45 var(--sans);
+       padding:14px 14px calc(env(safe-area-inset-bottom,0px) + 90px)}
+  h1{font-size:18px;letter-spacing:.06em;text-transform:uppercase}
+  h1 small{color:var(--tag);font-family:var(--mono);letter-spacing:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+        padding:14px;margin:12px 0}
+  label{display:block;color:var(--dim);font-size:12px;margin:10px 0 4px;
+        text-transform:uppercase;letter-spacing:.08em}
+  input,button{font:inherit;border-radius:8px}
+  input{width:100%;padding:10px;background:#0d100e;border:1px solid var(--line);
+        color:var(--ink)}
+  input.num{font-family:var(--mono)}
+  input:focus{outline:2px solid var(--tag);outline-offset:1px}
+  button{padding:12px 16px;border:1px solid var(--line);background:#22261f;
+         color:var(--ink);width:100%;margin-top:10px}
+  button.primary{background:var(--tag);border-color:var(--tag);color:#181203;
+                 font-weight:700}
+  button.ghost{background:transparent}
+  button:disabled{opacity:.45}
+  .row{display:flex;gap:10px}.row>*{flex:1}
+  .flag{display:inline-block;background:var(--tag);color:#181203;font:700 11px/1 var(--mono);
+        padding:4px 7px;border-radius:5px;letter-spacing:.05em}
+  .chip{display:inline-block;border:1px solid var(--line);color:var(--dim);
+        font:11px/1 var(--mono);padding:4px 7px;border-radius:5px}
+  .chip.ok{border-color:var(--ok);color:var(--ok)}
+  .chip.bad{border-color:var(--bad);color:var(--bad)}
+  .lineCard{border-left:3px solid var(--line)}
+  .lineCard.flagged{border-left-color:var(--tag)}
+  .lineCard.accepted{border-left-color:var(--ok)}
+  .lineCard.rejected{border-left-color:var(--bad);opacity:.6}
+  .thumb{width:74px;height:74px;object-fit:cover;border-radius:8px;
+         border:1px solid var(--line);background:#0d100e;flex:none}
+  .lineHead{display:flex;gap:10px;align-items:flex-start}
+  .money{font-family:var(--mono)}
+  #msg{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom,0px)+14px);
+       background:#0d100e;border:1px solid var(--line);border-radius:10px;padding:12px;
+       font-size:14px;display:none;white-space:pre-wrap;z-index:9}
+  #msg.err{border-color:var(--bad)} #msg.ok{border-color:var(--ok)}
+  .hint{color:var(--dim);font-size:13px}
+  .invItem{display:flex;justify-content:space-between;align-items:center;
+           padding:11px 2px;border-bottom:1px solid var(--line)}
+  .invItem:last-child{border-bottom:none}
+  .invItem b{font-family:var(--mono);font-weight:500}
+  a.back{color:var(--dim);text-decoration:none;font-size:13px}
+  .summary td{padding:4px 10px 4px 0;font-family:var(--mono)}
+</style>
+</head>
+<body>
+<h1>7 &amp; Under <small>/ receiving</small></h1>
+
+<!-- LOGIN -->
+<div id="vLogin" class="card" hidden>
+  <label>Email</label><input id="email" type="email" autocomplete="username">
+  <label>Password</label><input id="pw" type="password" autocomplete="current-password">
+  <button class="primary" onclick="doLogin()">Sign in</button>
+</div>
+
+<!-- HOME -->
+<div id="vHome" hidden>
+  <div class="card">
+    <label>Nellis invoice screenshot(s)</label>
+    <input id="files" type="file" accept="image/*" multiple>
+    <div class="row">
+      <div><label>Purchase date (optional)</label><input id="pdate" type="date"></div>
+      <div><label>Invoice total (optional)</label><input id="ptotal" class="num" inputmode="decimal" placeholder="0.00"></div>
+    </div>
+    <button class="primary" id="btnUpload" onclick="uploadNew()">Upload &amp; extract</button>
+    <p class="hint" style="margin-top:8px">Extraction reads the screenshot; nothing becomes
+      inventory until you approve it.</p>
+  </div>
+  <div class="card">
+    <label>Invoices awaiting review</label>
+    <div id="invList"><p class="hint">Loading…</p></div>
+  </div>
+  <button class="ghost" onclick="signOut()">Sign out</button>
+</div>
+
+<!-- REVIEW -->
+<div id="vReview" hidden>
+  <p><a class="back" href="#" onclick="showHome();return false">&#8592; all invoices</a></p>
+  <div class="card">
+    <div class="row">
+      <div><label>Purchase date</label><input id="rDate" type="date"></div>
+      <div><label>Invoice total</label><input id="rTotal" class="num" inputmode="decimal"></div>
+    </div>
+    <button onclick="saveInvoiceHead()">Save invoice details</button>
+  </div>
+  <div id="lines"></div>
+  <div class="card">
+    <button class="primary" id="btnApprove" onclick="approve(false)">Approve accepted lines &#8594; create inventory</button>
+    <button class="ghost" id="btnForce" hidden onclick="approve(true)">Force approve (override money check)</button>
+    <div id="approveOut"></div>
+  </div>
+</div>
+
+<div id="msg"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SB_URL  = "https://fuebtrlaroowedjxjucn.supabase.co";
+const SB_KEY  = "sb_publishable_-CrujyffVlSXhnst670YEA_-0aRK4Ti";
+const FN_INGEST  = "Ingest-invoice";     // deployed slug (capital I)
+const FN_EXTRACT = "extract-invoice";
+const sb = window.supabase.createClient(SB_URL, SB_KEY);
+
+let cur = { invoiceId:null, pages:[], payload:null, lines:[] };
+
+/* ---------- plumbing ---------- */
+function msg(t, cls){ const m=document.getElementById("msg");
+  m.textContent=t; m.className=cls||""; m.style.display="block";
+  clearTimeout(m._t); m._t=setTimeout(()=>m.style.display="none", cls==="err"?9000:4500); }
+function show(id){ for(const v of ["vLogin","vHome","vReview"])
+  document.getElementById(v).hidden = v!==id; }
+const $ = (id)=>document.getElementById(id);
+
+/* ---------- auth ---------- */
+async function boot(){
+  const { data:{ session } } = await sb.auth.getSession();
+  if(session){ show("vHome"); listInvoices(); } else show("vLogin");
+}
+async function doLogin(){
+  const { error } = await sb.auth.signInWithPassword(
+    { email:$("email").value.trim(), password:$("pw").value });
+  if(error) return msg("Sign-in failed: "+error.message,"err");
+  show("vHome"); listInvoices();
+}
+async function signOut(){ await sb.auth.signOut(); show("vLogin"); }
+
+/* ---------- home ---------- */
+async function listInvoices(){
+  const { data, error } = await sb.from("invoices")
+    .select("id,purchase_date,total,status,created_at")
+    .in("status",["uploaded","processing","needs_review"])
+    .order("created_at",{ascending:false}).limit(20);
+  const box=$("invList");
+  if(error){ box.innerHTML=`<p class="hint">${error.message}</p>`; return; }
+  if(!data.length){ box.innerHTML=`<p class="hint">Nothing waiting. Upload one above.</p>`; return; }
+  box.innerHTML = data.map(i=>`<div class="invItem">
+      <span>${i.purchase_date??"no date"} <span class="chip">${i.status}</span></span>
+      <span><b>${i.total!=null?("$"+Number(i.total).toFixed(2)):"—"}</b>
+      <button style="width:auto;margin:0 0 0 10px;padding:8px 12px"
+        onclick="openInvoice('${i.id}')">Review</button></span></div>`).join("");
+}
+
+/* resize to keep payloads + OpenAI cost sane; returns base64 (no prefix) */
+function resize(file){ return new Promise((res,rej)=>{
+  const img=new Image();
+  img.onload=()=>{ const MAX=1400, s=Math.min(1, MAX/Math.max(img.width,img.height));
+    const c=document.createElement("canvas");
+    c.width=Math.round(img.width*s); c.height=Math.round(img.height*s);
+    c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+    res(c.toDataURL("image/jpeg",0.85).split(",")[1]); };
+  img.onerror=()=>rej(new Error("could not read image"));
+  img.src=URL.createObjectURL(file); });}
+
+async function uploadNew(){
+  const files=[...$("files").files];
+  if(!files.length) return msg("Pick at least one screenshot.","err");
+  $("btnUpload").disabled=true;
+  try{
+    msg("Preparing images…");
+    const images=[]; for(const f of files) images.push(await resize(f));
+    const body={ images };
+    if($("pdate").value)  body.purchase_date=$("pdate").value;
+    if($("ptotal").value) body.total=Number($("ptotal").value);
+    msg("Uploading…");
+    const r1=await sb.functions.invoke(FN_INGEST,{ body });
+    if(r1.error||r1.data?.error) throw new Error(fnErr(r1));
+    msg("Reading the invoice… (10–20s)");
+    const r2=await sb.functions.invoke(FN_EXTRACT,{ body:{ invoice_id:r1.data.invoice_id }});
+    if(r2.error||r2.data?.error) throw new Error(fnErr(r2));
+    msg(`Extracted ${r2.data.lines_created} lines (${r2.data.lines_flagged} flagged).`,"ok");
+    openInvoice(r1.data.invoice_id);
+  }catch(e){ msg(String(e.message||e),"err"); }
+  $("btnUpload").disabled=false;
+}
+function fnErr(r){ return r.data?.error || r.error?.message || "function call failed"; }
+
+/* ---------- review ---------- */
+async function openInvoice(id){
+  cur={ invoiceId:id, pages:[], payload:null, lines:[] };
+  const { data:inv } = await sb.from("invoices").select("*").eq("id",id).single();
+  if(!inv) return msg("Invoice not found","err");
+  $("rDate").value  = inv.purchase_date ?? "";
+  $("rTotal").value = inv.total ?? "";
+  const { data:ext } = await sb.from("invoice_extractions").select("payload")
+    .eq("invoice_id",id).order("attempt",{ascending:false}).limit(1);
+  cur.payload = ext?.[0]?.payload ?? null;
+  for(const p of (inv.original_file_path??"").split(",").filter(Boolean)){
+    const { data:blob } = await sb.storage.from("invoices").download(p);
+    if(blob) cur.pages.push(await blobToImage(blob));
+  }
+  await loadLines(); show("vReview");
+}
+function blobToImage(blob){ return new Promise(res=>{
+  const img=new Image(); img.onload=()=>res(img);
+  img.src=URL.createObjectURL(blob); });}
+
+async function loadLines(){
+  const { data, error } = await sb.from("invoice_lines").select("*")
+    .eq("invoice_id",cur.invoiceId).order("line_number");
+  if(error) return msg(error.message,"err");
+  cur.lines=data;
+  const order={needs_review:0,pending:1,accepted:2,rejected:3};
+  data.sort((a,b)=>(order[a.review_status]-order[b.review_status])||(a.line_number-b.line_number));
+  $("lines").innerHTML = data.map(renderLine).join("");
+  data.forEach(drawThumb);
+  $("btnForce").hidden=true; $("approveOut").innerHTML="";
+}
+function bboxFor(n){ return cur.payload?.lines?.[n-1]?.bbox ?? null; }
+function renderLine(l){
+  const flagged=l.review_status==="needs_review";
+  const cls=flagged?"flagged":(l.review_status==="accepted"?"accepted":
+            l.review_status==="rejected"?"rejected":"");
+  return `<div class="card lineCard ${cls}" id="L${l.id}">
+    <div class="lineHead">
+      <canvas class="thumb" id="T${l.id}" width="148" height="148"></canvas>
+      <div style="flex:1">
+        ${flagged?`<span class="flag">CHECK THIS</span>`:
+          `<span class="chip ${l.review_status==="accepted"?"ok":l.review_status==="rejected"?"bad":""}">${l.review_status}</span>`}
+        <label>Title</label><input id="t${l.id}" value="${esc(l.title_raw??"")}">
+      </div>
+    </div>
+    <div class="row">
+      <div><label>Inv# (10 digits)</label>
+        <input id="n${l.id}" class="num" inputmode="numeric" value="${esc(l.inventory_number??"")}"></div>
+      <div><label>Hammer $ each</label>
+        <input id="h${l.id}" class="num" inputmode="decimal" value="${l.hammer_price??""}"></div>
+      <div><label>Qty</label>
+        <input id="q${l.id}" class="num" inputmode="numeric" value="${l.quantity}"></div>
+    </div>
+    ${l.review_status!=="accepted"?`<div class="row">
+      <button class="primary" onclick="acceptLine('${l.id}',${l.line_number})">Accept</button>
+      <button onclick="rejectLine('${l.id}')">Reject</button></div>`:""}
+  </div>`;
+}
+function esc(s){ return String(s).replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
+function drawThumb(l){
+  const c=$("T"+l.id); if(!c) return;
+  const b=bboxFor(l.line_number), pg=b?cur.pages[(b.page??1)-1]:null;
+  const ctx=c.getContext("2d");
+  if(pg&&b){ ctx.drawImage(pg, b.x*pg.width,b.y*pg.height,b.w*pg.width,b.h*pg.height,
+                           0,0,c.width,c.height); }
+  else { ctx.fillStyle="#0d100e"; ctx.fillRect(0,0,c.width,c.height);
+         ctx.fillStyle="#9aa096"; ctx.font="12px monospace";
+         ctx.fillText("no image",40,78); }
+}
+async function acceptLine(id,lineNo){
+  const invNum=$("n"+id).value.trim(), hammer=$("h"+id).value.trim(),
+        qty=parseInt($("q"+id).value,10);
+  if(!/^\d{10}$/.test(invNum)) return msg("Inv# must be exactly 10 digits.","err");
+  if(!hammer||isNaN(Number(hammer))) return msg("Hammer price is required.","err");
+  if(!qty||qty<1) return msg("Quantity must be 1 or more.","err");
+  let sourcePath=null;
+  const b=bboxFor(lineNo), pg=b?cur.pages[(b.page??1)-1]:null;
+  if(pg&&b){ try{
+    const c=document.createElement("canvas"); c.width=480; c.height=480;
+    c.getContext("2d").drawImage(pg,b.x*pg.width,b.y*pg.height,b.w*pg.width,b.h*pg.height,0,0,480,480);
+    const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",0.85));
+    const path=`${cur.invoiceId}/line-${lineNo}.jpg`;
+    const { error:upErr }=await sb.storage.from("photos-internal")
+      .upload(path,blob,{ upsert:true, contentType:"image/jpeg" });
+    if(!upErr) sourcePath="photos-internal/"+path;
+  }catch(_){/* photo is best-effort; the line still accepts */} }
+  const upd={ inventory_number:invNum, hammer_price:Number(hammer),
+              quantity:qty, title_raw:$("t"+id).value.trim()||null,
+              review_status:"accepted" };
+  if(sourcePath) upd.source_image_url=sourcePath;
+  const { error }=await sb.from("invoice_lines").update(upd).eq("id",id);
+  if(error) return msg(error.message,"err");
+  msg("Line accepted.","ok"); loadLines();
+}
+async function rejectLine(id){
+  const { error }=await sb.from("invoice_lines")
+    .update({ review_status:"rejected" }).eq("id",id);
+  if(error) return msg(error.message,"err");
+  loadLines();
+}
+async function saveInvoiceHead(){
+  const upd={};
+  upd.purchase_date=$("rDate").value||null;
+  upd.total=$("rTotal").value?Number($("rTotal").value):null;
+  const { error }=await sb.from("invoices").update(upd).eq("id",cur.invoiceId);
+  msg(error?error.message:"Invoice details saved.", error?"err":"ok");
+}
+async function approve(force){
+  $("btnApprove").disabled=true;
+  const { data, error } = await sb.rpc("approve_invoice",
+    { p_invoice_id:cur.invoiceId, p_force:!!force });
+  $("btnApprove").disabled=false;
+  if(error){
+    if(/reconciliation mismatch/i.test(error.message)){
+      $("btnForce").hidden=false;
+      return msg("Money check failed:\n"+error.message,"err");
+    }
+    return msg(error.message,"err");
+  }
+  $("btnForce").hidden=true;
+  $("approveOut").innerHTML=`<table class="summary">
+    <tr><td>Units created</td><td>${data.units_created}</td></tr>
+    <tr><td>SKUs</td><td>${(data.skus||[]).join(", ")||"—"}</td></tr>
+    <tr><td>Total landed</td><td>$${Number(data.total_landed).toFixed(2)}</td></tr>
+    <tr><td>Money check</td><td>${data.reconciliation}</td></tr></table>`;
+  msg(`${data.units_created} unit(s) created.`,"ok"); loadLines();
+}
+boot();
+</script>
+</body>
+</html>
