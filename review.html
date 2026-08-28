@@ -8,7 +8,7 @@
   :root{
     --bg:#111412; --panel:#191d1a; --line:#2a2f2b;
     --ink:#e8e6df; --dim:#9aa096;
-    --tag:#f5b02e;            /* Nellis price-tag amber: flags + primary action */
+    --tag:#f5b02e;
     --ok:#7fbf6a; --bad:#e06c5a;
     --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -59,19 +59,18 @@
   .invItem b{font-family:var(--mono);font-weight:500}
   a.back{color:var(--dim);text-decoration:none;font-size:13px}
   .summary td{padding:4px 10px 4px 0;font-family:var(--mono)}
+  .ver{color:var(--dim);font:11px var(--mono);text-align:center;margin-top:18px}
 </style>
 </head>
 <body>
-<h1>7 &amp; Under <small>/ receiving</small></h1>
+<h1>7 &amp; UNDER <small>/ RECEIVING</small></h1>
 
-<!-- LOGIN -->
 <div id="vLogin" class="card" hidden>
   <label>Email</label><input id="email" type="email" autocomplete="username">
   <label>Password</label><input id="pw" type="password" autocomplete="current-password">
   <button class="primary" onclick="doLogin()">Sign in</button>
 </div>
 
-<!-- HOME -->
 <div id="vHome" hidden>
   <div class="card">
     <label>Nellis invoice screenshot(s)</label>
@@ -91,7 +90,6 @@
   <button class="ghost" onclick="signOut()">Sign out</button>
 </div>
 
-<!-- REVIEW -->
 <div id="vReview" hidden>
   <p><a class="back" href="#" onclick="showHome();return false">&#8592; all invoices</a></p>
   <div class="card">
@@ -109,40 +107,39 @@
   </div>
 </div>
 
+<p class="ver">receiving v2</p>
 <div id="msg"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const SB_URL  = "https://fuebtrlaroowedjxjucn.supabase.co";
 const SB_KEY  = "sb_publishable_-CrujyffVlSXhnst670YEA_-0aRK4Ti";
-const FN_INGEST  = "Ingest-invoice";     // deployed slug (capital I)
+const FN_INGEST  = "Ingest-invoice";
 const FN_EXTRACT = "extract-invoice";
 const sb = window.supabase.createClient(SB_URL, SB_KEY);
 
 let cur = { invoiceId:null, pages:[], payload:null, lines:[] };
 
-/* ---------- plumbing ---------- */
 function msg(t, cls){ const m=document.getElementById("msg");
   m.textContent=t; m.className=cls||""; m.style.display="block";
   clearTimeout(m._t); m._t=setTimeout(()=>m.style.display="none", cls==="err"?9000:4500); }
 function show(id){ for(const v of ["vLogin","vHome","vReview"])
   document.getElementById(v).hidden = v!==id; }
 const $ = (id)=>document.getElementById(id);
+function showHome(){ show("vHome"); listInvoices(); }
 
-/* ---------- auth ---------- */
 async function boot(){
   const { data:{ session } } = await sb.auth.getSession();
-  if(session){ show("vHome"); listInvoices(); } else show("vLogin");
+  if(session){ showHome(); } else show("vLogin");
 }
 async function doLogin(){
   const { error } = await sb.auth.signInWithPassword(
     { email:$("email").value.trim(), password:$("pw").value });
   if(error) return msg("Sign-in failed: "+error.message,"err");
-  show("vHome"); listInvoices();
+  showHome();
 }
 async function signOut(){ await sb.auth.signOut(); show("vLogin"); }
 
-/* ---------- home ---------- */
 async function listInvoices(){
   const { data, error } = await sb.from("invoices")
     .select("id,purchase_date,total,status,created_at")
@@ -158,16 +155,23 @@ async function listInvoices(){
         onclick="openInvoice('${i.id}')">Review</button></span></div>`).join("");
 }
 
-/* resize to keep payloads + OpenAI cost sane; returns base64 (no prefix) */
-function resize(file){ return new Promise((res,rej)=>{
+function fileToBase64(file){ return new Promise((res,rej)=>{
+  const r=new FileReader();
+  r.onload=()=>res(String(r.result).split(",")[1]);
+  r.onerror=()=>rej(new Error("could not read file from storage"));
+  r.readAsDataURL(file); });}
+function tryResize(file){ return new Promise((res)=>{
   const img=new Image();
-  img.onload=()=>{ const MAX=1400, s=Math.min(1, MAX/Math.max(img.width,img.height));
-    const c=document.createElement("canvas");
-    c.width=Math.round(img.width*s); c.height=Math.round(img.height*s);
-    c.getContext("2d").drawImage(img,0,0,c.width,c.height);
-    res(c.toDataURL("image/jpeg",0.85).split(",")[1]); };
-  img.onerror=()=>rej(new Error("could not read image"));
-  img.src=URL.createObjectURL(file); });}
+  const url=URL.createObjectURL(file);
+  img.onload=()=>{ try{
+      const MAX=1400, s=Math.min(1, MAX/Math.max(img.width,img.height));
+      const c=document.createElement("canvas");
+      c.width=Math.round(img.width*s); c.height=Math.round(img.height*s);
+      c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+      res(c.toDataURL("image/jpeg",0.85).split(",")[1]);
+    }catch(_){ res(null); } finally{ URL.revokeObjectURL(url); } };
+  img.onerror=()=>{ URL.revokeObjectURL(url); res(null); };
+  img.src=url; });}
 
 async function uploadNew(){
   const files=[...$("files").files];
@@ -175,7 +179,12 @@ async function uploadNew(){
   $("btnUpload").disabled=true;
   try{
     msg("Preparing images…");
-    const images=[]; for(const f of files) images.push(await resize(f));
+    const images=[];
+    for(const f of files){
+      let b = await tryResize(f);
+      if(!b) b = await fileToBase64(f);
+      images.push(b);
+    }
     const body={ images };
     if($("pdate").value)  body.purchase_date=$("pdate").value;
     if($("ptotal").value) body.total=Number($("ptotal").value);
@@ -192,7 +201,6 @@ async function uploadNew(){
 }
 function fnErr(r){ return r.data?.error || r.error?.message || "function call failed"; }
 
-/* ---------- review ---------- */
 async function openInvoice(id){
   cur={ invoiceId:id, pages:[], payload:null, lines:[] };
   const { data:inv } = await sb.from("invoices").select("*").eq("id",id).single();
@@ -204,12 +212,14 @@ async function openInvoice(id){
   cur.payload = ext?.[0]?.payload ?? null;
   for(const p of (inv.original_file_path??"").split(",").filter(Boolean)){
     const { data:blob } = await sb.storage.from("invoices").download(p);
-    if(blob) cur.pages.push(await blobToImage(blob));
+    cur.pages.push(blob ? await blobToImage(blob) : null);
   }
   await loadLines(); show("vReview");
 }
 function blobToImage(blob){ return new Promise(res=>{
-  const img=new Image(); img.onload=()=>res(img);
+  const img=new Image();
+  img.onload=()=>res(img);
+  img.onerror=()=>res(null);
   img.src=URL.createObjectURL(blob); });}
 
 async function loadLines(){
@@ -277,7 +287,7 @@ async function acceptLine(id,lineNo){
     const { error:upErr }=await sb.storage.from("photos-internal")
       .upload(path,blob,{ upsert:true, contentType:"image/jpeg" });
     if(!upErr) sourcePath="photos-internal/"+path;
-  }catch(_){/* photo is best-effort; the line still accepts */} }
+  }catch(_){/* photo best-effort */} }
   const upd={ inventory_number:invNum, hammer_price:Number(hammer),
               quantity:qty, title_raw:$("t"+id).value.trim()||null,
               review_status:"accepted" };
