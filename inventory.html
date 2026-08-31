@@ -94,7 +94,8 @@ function cost(r){const c=Array.isArray(r.inventory_costs)?r.inventory_costs[0]:r
 function firstPhoto(r){const p=Array.isArray(r.inventory_photos)?r.inventory_photos[0]:r.inventory_photos;return p&&p.source_url?p.source_url:null;}
 function money(v){return v==null?"—":"$"+Number(v).toFixed(2);}
 function esc(s){return s==null?"":String(s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));}
-</<script>
+</script>
+<script>
 function visible(){
   return rows.filter(r=>{
     if(filter!=="all"&&r.status!==filter)return false;
