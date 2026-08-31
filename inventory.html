@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>7 &amp; Under — Inventory</title>
+<style>
+  :root{--bg:#141814;--card:#1b201b;--line:#2a312a;--txt:#e8ece8;--dim:#9aa39a;--amber:#f5b82e;--green:#7dc87d;--red:#e07a5f;--mono:ui-monospace,Menlo,Consolas,monospace}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.45 system-ui,Roboto,sans-serif;padding:16px 16px 60px}
+  h1{font-size:20px;margin:0 0 12px}
+  h1 span{color:var(--amber)}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  input,button{font:inherit}
+  input{width:100%;background:#101410;border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:10px 12px;margin-bottom:8px}
+  button{background:var(--amber);color:#141414;font-weight:700;border:0;border-radius:8px;padding:12px;width:100%;cursor:pointer}
+  button.ghost{background:transparent;color:var(--txt);border:1px solid var(--line)}
+  .filters{display:flex;gap:8px;margin:10px 0 4px}
+  .filters button{flex:1;padding:8px;background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:600}
+  .filters button.on{background:var(--amber);color:#141414;border-color:var(--amber)}
+  .count{color:var(--dim);font-size:14px;margin:6px 2px}
+  .card{display:flex;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+  .ph{width:92px;height:92px;flex:none;border-radius:8px;background:#101410;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px;overflow:hidden}
+  .ph img{width:100%;height:100%;object-fit:cover;display:block}
+  .info{min-width:0;flex:1}
+  .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ids{font-family:var(--mono);font-size:12px;color:var(--dim);margin:2px 0 6px}
+  .money b{color:var(--amber);font-size:17px}
+  .sub{font-size:13px;color:var(--dim);margin-top:2px}
+  .chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin-top:6px}
+  .chip.available{background:#173417;color:var(--green)}
+  .chip.sold{background:#341717;color:var(--red)}
+  .muted{color:var(--dim)}
+  .err{border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;margin-top:10px;display:none}
+  footer{position:fixed;left:0;right:0;bottom:0;text-align:center;color:var(--dim);font:12px var(--mono);padding:8px;background:linear-gradient(transparent,var(--bg) 40%)}
+</style>
+</head>
+<body>
+<h1>7 &amp; UNDER / <span>INVENTORY</span></h1>
+
+<div id="authPanel" class="panel">
+  <input id="email" type="email" placeholder="email" autocomplete="username">
+  <input id="pass" type="password" placeholder="password" autocomplete="current-password">
+  <button id="btnIn">Sign in</button>
+</div>
+
+<div id="app" style="display:none">
+  <div class="panel">
+    <input id="q" type="search" placeholder="Search title, SKU, inv#">
+    <div class="filters">
+      <button data-f="available" class="on">Available</button>
+      <button data-f="sold">Sold</button>
+      <button data-f="all">All</button>
+    </div>
+    <div class="count" id="count"></div>
+  </div>
+  <div id="list"></div>
+  <button id="btnOut" class="ghost">Sign out</button>
+</div>
+
+<div id="err" class="err"></div>
+<footer>inventory v1</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SB_URL="https://fuebtrlaroowedjxjucn.supabase.co";
+const SB_KEY="sb_publishable_-CrujyffVlSXhnst670YEA_-0aRK4Ti";
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+const $=s=>document.querySelector(s);
+let rows=[],filter="available",q="",photoCache={};
+
+function err(m){const e=$("#err");e.textContent=m||"";e.style.display=m?"block":"none";}
+function showAuth(){$("#authPanel").style.display="block";$("#app").style.display="none";}
+async function enter(){$("#authPanel").style.display="none";$("#app").style.display="block";await load();}
+async function boot(){const {data:{session}}=await sb.auth.getSession();session?enter():showAuth();}
+
+$("#btnIn").onclick=async()=>{
+  err("");
+  const {error}=await sb.auth.signInWithPassword({email:$("#email").value.trim(),password:$("#pass").value});
+  error?err(error.message):enter();
+};
+$("#btnOut").onclick=async()=>{await sb.auth.signOut();location.reload();};
+
+async function load(){
+  err("");
+  const {data,error}=await sb.from("inventory").select(
+    "id,sku,inventory_number,title,status,archived,brand,condition,storage_location,"+
+    "inventory_costs(hammer_cost,landed_cost),inventory_photos(source_url)"
+  ).eq("archived",false).order("created_at",{ascending:false});
+  if(error){err("Load failed: "+error.message);return;}
+  rows=data||[];render();hydratePhotos();
+}
+function cost(r){const c=Array.isArray(r.inventory_costs)?r.inventory_costs[0]:r.inventory_costs;return c||{};}
+function firstPhoto(r){const p=Array.isArray(r.inventory_photos)?r.inventory_photos[0]:r.inventory_photos;return p&&p.source_url?p.source_url:null;}
+function money(v){return v==null?"—":"$"+Number(v).toFixed(2);}
+function esc(s){return s==null?"":String(s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));}
+</<script>
+function visible(){
+  return rows.filter(r=>{
+    if(filter!=="all"&&r.status!==filter)return false;
+    if(q){const s=((r.title||"")+" "+(r.sku||"")+" "+(r.inventory_number||"")).toLowerCase();
+      if(!s.includes(q))return false;}
+    return true;
+  });
+}
+function render(){
+  const v=visible();
+  const total=v.reduce((a,r)=>a+(Number(cost(r).landed_cost)||0),0);
+  $("#count").textContent=v.length+" unit"+(v.length===1?"":"s")+" · $"+total.toFixed(2)+" landed";
+  $("#list").innerHTML=v.map(r=>{
+    const c=cost(r),ph=photoCache[r.id];
+    const extra=[r.brand,r.condition,r.storage_location].filter(Boolean).map(esc).join(" · ");
+    return '<div class="card">'
+      +'<div class="ph">'+(ph?'<img src="'+ph+'" alt="">':"no photo")+'</div>'
+      +'<div class="info">'
+      +'<div class="t">'+(esc(r.title)||'<span class="muted">untitled</span>')+'</div>'
+      +'<div class="ids">SKU '+esc(r.sku)+' · INV# '+esc(r.inventory_number)+'</div>'
+      +'<div class="money"><b>'+money(c.landed_cost)+'</b> landed <span class="muted">· '+money(c.hammer_cost)+' hammer</span></div>'
+      +(extra?'<div class="sub">'+extra+'</div>':"")
+      +'<span class="chip '+esc(r.status)+'">'+esc(r.status)+'</span>'
+      +'</div></div>';
+  }).join("")||'<div class="panel muted">No units match.</div>';
+}
+async function hydratePhotos(){
+  let changed=false;
+  for(const r of rows){
+    if(photoCache[r.id]!==undefined)continue;
+    const src=firstPhoto(r);
+    if(!src){photoCache[r.id]=null;continue;}
+    const path=src.replace(/^photos-internal\//,"");
+    const {data}=await sb.storage.from("photos-internal").createSignedUrl(path,3600);
+    photoCache[r.id]=(data&&data.signedUrl)||null;changed=true;
+  }
+  if(changed)render();
+}
+$("#q").oninput=e=>{q=e.target.value.trim().toLowerCase();render();};
+document.querySelectorAll(".filters button").forEach(b=>{
+  b.onclick=()=>{document.querySelectorAll(".filters button").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");filter=b.dataset.f;render();};
+});
+boot();
+</script>
+</body>
+</html>script>
