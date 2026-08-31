@@ -91,8 +91,9 @@
   </div>
 
   <div id="labPanel" class="panel" style="display:none">
-    <div class="lbl">EXTRACTION TEST — product-shots filename</div>
-    <input id="labPath" type="text" placeholder="e.g. 9568.jpg" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <div class="lbl">EXTRACTION TEST</div>
+    <button id="labUpload">Upload Nellis screenshot</button>
+    <input id="labPath" type="text" placeholder="filename in product-shots" autocapitalize="off" autocorrect="off" spellcheck="false" style="margin-top:8px">
     <button id="labRun">Run extract-product</button>
     <button id="labList" class="ghost" style="margin-top:8px">List files in bucket</button>
     <pre id="labOut" style="display:none"></pre>
@@ -103,9 +104,10 @@
 </div>
 
 <input id="filePick" type="file" accept="image/*" multiple style="display:none">
+<input id="labPick" type="file" accept="image/*" style="display:none">
 <div id="modal"><div class="sheet" id="sheet"></div></div>
 <div id="err" class="err"></div>
-<footer>inventory v5</footer>
+<footer>inventory v6</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -211,18 +213,42 @@ async function hydratePhotos(){
 function labShow(o){const p=$("#labOut");p.style.display="block";
   p.textContent=typeof o==="string"?o:JSON.stringify(o,null,2);}
 
+$("#labUpload").onclick=()=>{const fp=$("#labPick");fp.value="";fp.click();};
+
+$("#labPick").onchange=async e=>{
+  const f=(e.target.files||[])[0];
+  if(!f)return;
+  labShow("uploading…");
+  try{
+    const ext=(f.name.split(".").pop()||"jpg").toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,5)||"jpg";
+    const path="nellis/"+Date.now()+"-"+Math.random().toString(36).slice(2,8)+"."+ext;
+    const {error:upErr}=await sb.storage.from("product-shots")
+      .upload(path,f,{contentType:f.type||"image/jpeg",upsert:false});
+    if(upErr)throw new Error("Upload failed: "+upErr.message);
+    $("#labPath").value=path;
+    labShow("uploaded: "+path+"\n\nFilename filled in below. Tap Run extract-product.");
+  }catch(ex){console.error("labUpload",ex);labShow("ERROR: "+(ex.message||ex));}
+};
+
 $("#labList").onclick=async()=>{
   labShow("listing…");
   try{
-    const {data,error}=await sb.storage.from("product-shots").list("",{limit:100});
-    if(error)throw new Error(error.message);
-    labShow((data||[]).length?(data||[]).map(f=>f.name).join("\n"):"(bucket is empty)");
+    const out=[];
+    const {data:root,error:e1}=await sb.storage.from("product-shots").list("",{limit:100});
+    if(e1)throw new Error(e1.message);
+    for(const f of (root||[])){
+      if(f.id===null||f.metadata===null){
+        const {data:sub}=await sb.storage.from("product-shots").list(f.name,{limit:100});
+        for(const s of (sub||[]))out.push(f.name+"/"+s.name);
+      }else out.push(f.name);
+    }
+    labShow(out.length?out.join("\n"):"(bucket is empty)");
   }catch(ex){console.error("labList",ex);labShow("ERROR: "+(ex.message||ex));}
 };
 
 $("#labRun").onclick=async()=>{
   const path=$("#labPath").value.trim();
-  if(!path){labShow("Enter a filename first.");return;}
+  if(!path){labShow("Upload a screenshot first, or enter a filename.");return;}
   labShow("running extraction…");
   try{
     const {data:{session}}=await sb.auth.getSession();
