@@ -18,6 +18,9 @@
   .filters{display:flex;gap:8px;margin:10px 0 4px}
   .filters button{flex:1;padding:8px;background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:600}
   .filters button.on{background:var(--amber);color:#141414;border-color:var(--amber)}
+  .modebar{display:flex;gap:8px;margin-bottom:10px}
+  .modebar button{flex:1;padding:8px;background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:700}
+  .modebar button.on{background:#173417;color:var(--green);border-color:var(--green)}
   .count{color:var(--dim);font-size:14px;margin:6px 2px}
   .card{display:flex;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
   .ph{position:relative;width:92px;height:92px;flex:none;border-radius:8px;background:#101410;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px;overflow:hidden;cursor:pointer;text-align:center;padding:4px}
@@ -36,6 +39,21 @@
   .muted{color:var(--dim)}
   .err{border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;margin-top:10px;display:none}
   footer{position:fixed;left:0;right:0;bottom:0;text-align:center;color:var(--dim);font:12px var(--mono);padding:8px;background:linear-gradient(transparent,var(--bg) 40%)}
+  #modal{position:fixed;inset:0;background:rgba(0,0,0,.86);display:none;overflow-y:auto;padding:16px;z-index:50}
+  #modal.on{display:block}
+  .sheet{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;max-width:640px;margin:0 auto 40px}
+  .sheet h2{font-size:16px;margin:0 0 4px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:12px 0}
+  .cellwrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#101410}
+  .cellwrap img{width:100%;display:block;aspect-ratio:1/1;object-fit:cover}
+  .cellwrap .pad{padding:8px}
+  .cellwrap .pad button{margin-top:6px;padding:8px;font-size:13px}
+  .cellwrap button.del{background:transparent;color:var(--red);border:1px solid var(--red)}
+  .cellwrap button.main{background:transparent;color:var(--amber);border:1px solid var(--amber)}
+  .isprim{font:700 11px var(--mono);color:var(--green);display:block;text-align:center;padding:6px 0}
+  .row2{display:flex;gap:8px}
+  .row2 > div{flex:1}
+  .lbl{font-size:12px;color:var(--dim);margin-bottom:2px}
 </style>
 </head>
 <body>
@@ -49,6 +67,10 @@
 
 <div id="app" style="display:none">
   <div class="panel">
+    <div class="modebar">
+      <button data-m="customer" class="on">Customer view</button>
+      <button data-m="owner">Owner view</button>
+    </div>
     <input id="q" type="search" placeholder="Search title, SKU, inv#">
     <div class="filters">
       <button data-f="available" class="on">Available</button>
@@ -62,8 +84,9 @@
 </div>
 
 <input id="filePick" type="file" accept="image/*" multiple style="display:none">
+<div id="modal"><div class="sheet" id="sheet"></div></div>
 <div id="err" class="err"></div>
-<footer>inventory v2</footer>
+<footer>inventory v3</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -72,6 +95,7 @@ const SB_KEY="sb_publishable_-CrujyffVlSXhnst670YEA_-0aRK4Ti";
 const sb=window.supabase.createClient(SB_URL,SB_KEY);
 const $=s=>document.querySelector(s);
 let rows=[],filter="available",q="",photoCache={},busy={},pendingId=null;
+let mode="customer",modalId=null,modalUrls={};
 
 function err(m){const e=$("#err");e.textContent=m||"";e.style.display=m?"block":"none";}
 function showAuth(){$("#authPanel").style.display="block";$("#app").style.display="none";}
@@ -88,12 +112,12 @@ $("#btnOut").onclick=async()=>{await sb.auth.signOut();location.reload();};
 async function load(){
   err("");
   const {data,error}=await sb.from("inventory").select(
-    "id,sku,inventory_number,title,status,archived,brand,condition,storage_location,"+
-    "inventory_costs(hammer_cost,landed_cost),"+
-    "inventory_photos(storage_path,source_url,sort_order,is_primary,created_at)"
+    "id,sku,inventory_number,title,status,archived,brand,condition,storage_location,selling_price,"+
+    "inventory_costs(hammer_cost,landed_cost,wholesale_price,nellis_retail),"+
+    "inventory_photos(id,storage_path,source_url,sort_order,is_primary,created_at)"
   ).eq("archived",false).order("created_at",{ascending:false});
   if(error){err("Load failed: "+error.message);return;}
-  rows=data||[];photoCache={};render();hydratePhotos();
+  rows=data||[];photoCache={};modalUrls={};render();hydratePhotos();
 }
 function cost(r){const c=Array.isArray(r.inventory_costs)?r.inventory_costs[0]:r.inventory_costs;return c||{};}
 function photoRows(r){
@@ -121,22 +145,28 @@ function visible(){
 function render(){
   const v=visible();
   const total=v.reduce((a,r)=>a+(Number(cost(r).landed_cost)||0),0);
-  $("#count").textContent=v.length+" unit"+(v.length===1?"":"s")+" · $"+total.toFixed(2)+" landed";
+  $("#count").textContent=v.length+" unit"+(v.length===1?"":"s")
+    +(mode==="owner"?" · $"+total.toFixed(2)+" landed":"");
   $("#list").innerHTML=v.map(r=>{
     const c=cost(r),ph=photoCache[r.id],n=photoRows(r).length;
-    const extra=[r.brand,r.condition,r.storage_location].filter(Boolean).map(esc).join(" · ");
+    const bits=[r.brand,r.condition];
+    if(mode==="owner")bits.push(r.storage_location);
+    const extra=bits.filter(Boolean).map(esc).join(" · ");
     let tile="";
     if(ph)tile='<img src="'+ph+'" alt="">';
     else if(n>0)tile='<span class="muted">loading…</span>';
     else tile='<span class="add">+ add<br>photo</span>';
     if(n>1)tile+='<span class="badge">'+n+'</span>';
     if(busy[r.id])tile+='<span class="busy">uploading…</span>';
+    const moneyLine = mode==="owner"
+      ? '<div class="money"><b>'+money(c.landed_cost)+'</b> landed <span class="muted">· '+money(c.hammer_cost)+' hammer</span></div>'
+      : '<div class="money"><b>'+money(r.selling_price)+'</b></div>';
     return '<div class="card">'
       +'<div class="ph" data-id="'+esc(r.id)+'">'+tile+'</div>'
       +'<div class="info">'
       +'<div class="t">'+(esc(r.title)||'<span class="muted">untitled</span>')+'</div>'
       +'<div class="ids">SKU '+esc(r.sku)+' · INV# '+esc(r.inventory_number)+'</div>'
-      +'<div class="money"><b>'+money(c.landed_cost)+'</b> landed <span class="muted">· '+money(c.hammer_cost)+' hammer</span></div>'
+      +moneyLine
       +(extra?'<div class="sub">'+extra+'</div>':"")
       +'<span class="chip '+esc(r.status)+'">'+esc(r.status)+'</span>'
       +'</div></div>';
@@ -156,15 +186,120 @@ async function hydratePhotos(){
   if(changed)render();
 }
 
+function renderModal(){
+  const m=$("#modal");
+  if(!modalId){m.classList.remove("on");$("#sheet").innerHTML="";return;}
+  const r=rows.find(x=>x.id===modalId);
+  if(!r){m.classList.remove("on");return;}
+  const list=photoRows(r),c=cost(r);
+  let cells=list.map(p=>{
+    const u=modalUrls[p.id];
+    const img=u?'<img src="'+u+'" alt="">':'<div class="pad muted">loading…</div>';
+    let ctrl="";
+    if(mode==="owner"){
+      ctrl='<div class="pad">'
+        +(p.is_primary?'<span class="isprim">MAIN PHOTO</span>'
+          :'<button class="main" data-act="main" data-pid="'+esc(p.id)+'">Make main</button>')
+        +'<button class="del" data-act="del" data-pid="'+esc(p.id)+'">Delete</button></div>';
+    }
+    return '<div class="cellwrap">'+img+ctrl+'</div>';
+  }).join("");
+  if(!cells)cells='<div class="muted">No photos yet.</div>';
+  let body='<h2>'+(esc(r.title)||"untitled")+'</h2>'
+    +'<div class="ids">SKU '+esc(r.sku)+' · INV# '+esc(r.inventory_number)+'</div>'
+    +'<div class="grid">'+cells+'</div>';
+  if(mode==="owner"){
+    body+='<button data-act="add">+ Add photos</button>'
+      +'<div style="margin-top:14px">'
+      +'<div class="row2">'
+      +'<div><div class="lbl">Retail price</div>'
+      +'<input id="pRetail" type="number" step="0.01" inputmode="decimal" placeholder="—" value="'
+      +(r.selling_price==null?"":esc(r.selling_price))+'"></div>'
+      +'<div><div class="lbl">Wholesale price</div>'
+      +'<input id="pWhole" type="number" step="0.01" inputmode="decimal" placeholder="—" value="'
+      +(c.wholesale_price==null?"":esc(c.wholesale_price))+'"></div>'
+      +'</div>'
+      +'<button data-act="save">Save prices</button></div>';
+  }
+  body+='<button class="ghost" data-act="close" style="margin-top:10px">Close</button>';
+  $("#sheet").innerHTML=body;
+  m.classList.add("on");
+}
+async function openUnit(id){
+  modalId=id;renderModal();
+  const r=rows.find(x=>x.id===id);
+  if(!r)return;
+  let changed=false;
+  for(const p of photoRows(r)){
+    if(modalUrls[p.id]!==undefined)continue;
+    const path=pathOf(p);
+    if(!path){modalUrls[p.id]=null;continue;}
+    const {data}=await sb.storage.from("photos-internal").createSignedUrl(path,3600);
+    modalUrls[p.id]=(data&&data.signedUrl)||null;changed=true;
+  }
+  if(changed&&modalId===id)renderModal();
+}
+async function reopen(id){await load();modalId=id;await openUnit(id);}
+
+async function deletePhoto(pid){
+  if(!confirm("Delete this photo? This cannot be undone."))return;
+  const id=modalId,r=rows.find(x=>x.id===id);
+  const p=r?photoRows(r).find(x=>x.id===pid):null;
+  err("");
+  try{
+    const {error:dErr}=await sb.from("inventory_photos").delete().eq("id",pid);
+    if(dErr)throw new Error("Delete failed: "+dErr.message);
+    const path=p?pathOf(p):null;
+    if(path){const {error:sErr}=await sb.storage.from("photos-internal").remove([path]);
+      if(sErr)console.error("storage remove failed",sErr);}
+    await reopen(id);
+  }catch(ex){console.error("deletePhoto",ex);err(ex.message||String(ex));}
+}
+async function setMain(pid){
+  const id=modalId;err("");
+  try{
+    const {error:e1}=await sb.from("inventory_photos").update({is_primary:false}).eq("inventory_id",id);
+    if(e1)throw new Error("Update failed: "+e1.message);
+    const {error:e2}=await sb.from("inventory_photos").update({is_primary:true}).eq("id",pid);
+    if(e2)throw new Error("Update failed: "+e2.message);
+    await reopen(id);
+  }catch(ex){console.error("setMain",ex);err(ex.message||String(ex));}
+}
+async function savePrices(){
+  const id=modalId;err("");
+  const rv=($("#pRetail")?$("#pRetail").value:"").trim();
+  const wv=($("#pWhole")?$("#pWhole").value:"").trim();
+  const retail=rv===""?null:Number(rv);
+  const whole=wv===""?null:Number(wv);
+  if(retail!==null&&!isFinite(retail)){err("Retail price is not a number.");return;}
+  if(whole!==null&&!isFinite(whole)){err("Wholesale price is not a number.");return;}
+  try{
+    const {error:e1}=await sb.from("inventory").update({selling_price:retail}).eq("id",id);
+    if(e1)throw new Error("Save failed: "+e1.message);
+    const {error:e2}=await sb.from("inventory_costs").update({wholesale_price:whole}).eq("inventory_id",id);
+    if(e2)throw new Error("Retail saved, wholesale failed: "+e2.message);
+    await reopen(id);
+  }catch(ex){console.error("savePrices",ex);err(ex.message||String(ex));}
+}
+
+$("#modal").addEventListener("click",e=>{
+  if(e.target.id==="modal"){modalId=null;renderModal();return;}
+  const b=e.target.closest("button");
+  if(!b)return;
+  const act=b.dataset.act;
+  if(act==="close"){modalId=null;renderModal();}
+  else if(act==="add"){pendingId=modalId;const fp=$("#filePick");fp.value="";fp.click();}
+  else if(act==="del")deletePhoto(b.dataset.pid);
+  else if(act==="main")setMain(b.dataset.pid);
+  else if(act==="save")savePrices();
+});
+
 $("#list").addEventListener("click",e=>{
   const tile=e.target.closest(".ph");
   if(!tile)return;
   const id=tile.dataset.id;
   if(!id||busy[id])return;
-  pendingId=id;
-  const fp=$("#filePick");
-  fp.value="";
-  fp.click();
+  openUnit(id);
 });
 
 $("#filePick").onchange=async e=>{
@@ -195,7 +330,7 @@ async function uploadPhotos(id,files){
     const {error:insErr}=await sb.from("inventory_photos").insert(inserts);
     if(insErr)throw new Error("Saved file but DB insert failed: "+insErr.message);
     busy[id]=false;
-    await load();
+    if(modalId===id)await reopen(id); else await load();
   }catch(ex){
     console.error("uploadPhotos",ex);
     busy[id]=false;render();
@@ -207,6 +342,10 @@ $("#q").oninput=e=>{q=e.target.value.trim().toLowerCase();render();};
 document.querySelectorAll(".filters button").forEach(b=>{
   b.onclick=()=>{document.querySelectorAll(".filters button").forEach(x=>x.classList.remove("on"));
     b.classList.add("on");filter=b.dataset.f;render();};
+});
+document.querySelectorAll(".modebar button").forEach(b=>{
+  b.onclick=()=>{document.querySelectorAll(".modebar button").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");mode=b.dataset.m;render();if(modalId)renderModal();};
 });
 boot();
 </script>
