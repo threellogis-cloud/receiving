@@ -63,6 +63,7 @@
   .costs .frozen{color:var(--dim);font:11px var(--mono);text-align:center;padding-top:8px}
   button.danger{background:transparent;color:var(--red);border:1px solid var(--red)}
   button.armed{background:var(--red);color:#141414;border:1px solid var(--red)}
+  pre{background:#101410;border:1px solid var(--line);border-radius:8px;padding:10px;font:12px/1.4 var(--mono);white-space:pre-wrap;word-break:break-word;max-height:340px;overflow:auto;margin:8px 0 0}
 </style>
 </head>
 <body>
@@ -88,6 +89,15 @@
     </div>
     <div class="count" id="count"></div>
   </div>
+
+  <div id="labPanel" class="panel" style="display:none">
+    <div class="lbl">EXTRACTION TEST — product-shots filename</div>
+    <input id="labPath" type="text" placeholder="e.g. 9568.jpg" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button id="labRun">Run extract-product</button>
+    <button id="labList" class="ghost" style="margin-top:8px">List files in bucket</button>
+    <pre id="labOut" style="display:none"></pre>
+  </div>
+
   <div id="list"></div>
   <button id="btnOut" class="ghost">Sign out</button>
 </div>
@@ -95,7 +105,7 @@
 <input id="filePick" type="file" accept="image/*" multiple style="display:none">
 <div id="modal"><div class="sheet" id="sheet"></div></div>
 <div id="err" class="err"></div>
-<footer>inventory v4</footer>
+<footer>inventory v5</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -158,6 +168,7 @@ function render(){
   const total=v.reduce((a,r)=>a+(Number(cost(r).landed_cost)||0),0);
   $("#count").textContent=v.length+" unit"+(v.length===1?"":"s")
     +(mode==="owner"?" · $"+total.toFixed(2)+" landed":"");
+  $("#labPanel").style.display = mode==="owner" ? "block" : "none";
   $("#list").innerHTML=v.map(r=>{
     const c=cost(r),ph=photoCache[r.id],n=photoRows(r).length;
     const bits=[r.brand,r.condition];
@@ -196,6 +207,40 @@ async function hydratePhotos(){
   }
   if(changed)render();
 }
+
+function labShow(o){const p=$("#labOut");p.style.display="block";
+  p.textContent=typeof o==="string"?o:JSON.stringify(o,null,2);}
+
+$("#labList").onclick=async()=>{
+  labShow("listing…");
+  try{
+    const {data,error}=await sb.storage.from("product-shots").list("",{limit:100});
+    if(error)throw new Error(error.message);
+    labShow((data||[]).length?(data||[]).map(f=>f.name).join("\n"):"(bucket is empty)");
+  }catch(ex){console.error("labList",ex);labShow("ERROR: "+(ex.message||ex));}
+};
+
+$("#labRun").onclick=async()=>{
+  const path=$("#labPath").value.trim();
+  if(!path){labShow("Enter a filename first.");return;}
+  labShow("running extraction…");
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    if(!session)throw new Error("no session");
+    const res=await fetch(SB_URL+"/functions/v1/extract-product",{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization":"Bearer "+session.access_token,
+        "apikey":SB_KEY
+      },
+      body:JSON.stringify({storage_path:path})
+    });
+    const txt=await res.text();
+    let out;try{out=JSON.parse(txt);}catch(_){out=txt;}
+    labShow({http_status:res.status,response:out});
+  }catch(ex){console.error("labRun",ex);labShow("ERROR: "+(ex.message||ex));}
+};
 
 function renderModal(){
   const m=$("#modal");
