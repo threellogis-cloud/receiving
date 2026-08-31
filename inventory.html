@@ -11,8 +11,9 @@
   h1{font-size:20px;margin:0 0 12px}
   h1 span{color:var(--amber)}
   .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
-  input,button{font:inherit}
-  input{width:100%;background:#101410;border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:10px 12px;margin-bottom:8px}
+  input,button,select,textarea{font:inherit}
+  input,select,textarea{width:100%;background:#101410;border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:10px 12px;margin-bottom:8px}
+  textarea{min-height:70px;resize:vertical}
   button{background:var(--amber);color:#141414;font-weight:700;border:0;border-radius:8px;padding:12px;width:100%;cursor:pointer}
   button.ghost{background:transparent;color:var(--txt);border:1px solid var(--line)}
   .filters{display:flex;gap:8px;margin:10px 0 4px}
@@ -38,6 +39,7 @@
   .chip.sold{background:#341717;color:var(--red)}
   .muted{color:var(--dim)}
   .err{border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;margin-top:10px;display:none}
+  .ok{border:1px solid var(--green);color:var(--green);border-radius:10px;padding:10px;margin-top:10px;display:none}
   footer{position:fixed;left:0;right:0;bottom:0;text-align:center;color:var(--dim);font:12px var(--mono);padding:8px;background:linear-gradient(transparent,var(--bg) 40%)}
   #modal{position:fixed;inset:0;background:rgba(0,0,0,.86);display:none;overflow-y:auto;padding:16px;z-index:50}
   #modal.on{display:block}
@@ -54,6 +56,13 @@
   .row2{display:flex;gap:8px}
   .row2 > div{flex:1}
   .lbl{font-size:12px;color:var(--dim);margin-bottom:2px}
+  .sect{border-top:1px solid var(--line);margin-top:16px;padding-top:14px}
+  .sect h3{font-size:13px;color:var(--dim);margin:0 0 10px;font-weight:700;letter-spacing:.04em}
+  .costs{background:#101410;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:14px}
+  .costs div{display:flex;justify-content:space-between;padding:3px 0}
+  .costs .frozen{color:var(--dim);font:11px var(--mono);text-align:center;padding-top:8px}
+  button.danger{background:transparent;color:var(--red);border:1px solid var(--red)}
+  button.armed{background:var(--red);color:#141414;border:1px solid var(--red)}
 </style>
 </head>
 <body>
@@ -71,7 +80,7 @@
       <button data-m="customer" class="on">Customer view</button>
       <button data-m="owner">Owner view</button>
     </div>
-    <input id="q" type="search" placeholder="Search title, SKU, inv#">
+    <input id="q" type="search" placeholder="Search title, SKU, inv#, category">
     <div class="filters">
       <button data-f="available" class="on">Available</button>
       <button data-f="sold">Sold</button>
@@ -86,7 +95,7 @@
 <input id="filePick" type="file" accept="image/*" multiple style="display:none">
 <div id="modal"><div class="sheet" id="sheet"></div></div>
 <div id="err" class="err"></div>
-<footer>inventory v3</footer>
+<footer>inventory v4</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -95,7 +104,7 @@ const SB_KEY="sb_publishable_-CrujyffVlSXhnst670YEA_-0aRK4Ti";
 const sb=window.supabase.createClient(SB_URL,SB_KEY);
 const $=s=>document.querySelector(s);
 let rows=[],filter="available",q="",photoCache={},busy={},pendingId=null;
-let mode="customer",modalId=null,modalUrls={};
+let mode="customer",modalId=null,modalUrls={},armArchive=false,saveNote="";
 
 function err(m){const e=$("#err");e.textContent=m||"";e.style.display=m?"block":"none";}
 function showAuth(){$("#authPanel").style.display="block";$("#app").style.display="none";}
@@ -112,8 +121,9 @@ $("#btnOut").onclick=async()=>{await sb.auth.signOut();location.reload();};
 async function load(){
   err("");
   const {data,error}=await sb.from("inventory").select(
-    "id,sku,inventory_number,title,status,archived,brand,condition,storage_location,selling_price,"+
-    "inventory_costs(hammer_cost,landed_cost,wholesale_price,nellis_retail),"+
+    "id,sku,inventory_number,title,status,archived,brand,model,condition,category,"+
+    "storage_location,internal_notes,selling_price,"+
+    "inventory_costs(hammer_cost,buyer_premium_cost,tax_cost,landed_cost,wholesale_price,nellis_retail),"+
     "inventory_photos(id,storage_path,source_url,sort_order,is_primary,created_at)"
   ).eq("archived",false).order("created_at",{ascending:false});
   if(error){err("Load failed: "+error.message);return;}
@@ -132,12 +142,13 @@ function photoRows(r){
 function pathOf(p){return String(p.storage_path||p.source_url||"").replace(/^photos-internal\//,"");}
 function money(v){return v==null?"—":"$"+Number(v).toFixed(2);}
 function esc(s){return s==null?"":String(s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));}
+function val(v){return v==null?"":esc(v);}
 </script>
 <script>
 function visible(){
   return rows.filter(r=>{
     if(filter!=="all"&&r.status!==filter)return false;
-    if(q){const s=((r.title||"")+" "+(r.sku||"")+" "+(r.inventory_number||"")).toLowerCase();
+    if(q){const s=((r.title||"")+" "+(r.sku||"")+" "+(r.inventory_number||"")+" "+(r.category||"")).toLowerCase();
       if(!s.includes(q))return false;}
     return true;
   });
@@ -188,7 +199,7 @@ async function hydratePhotos(){
 
 function renderModal(){
   const m=$("#modal");
-  if(!modalId){m.classList.remove("on");$("#sheet").innerHTML="";return;}
+  if(!modalId){m.classList.remove("on");$("#sheet").innerHTML="";armArchive=false;saveNote="";return;}
   const r=rows.find(x=>x.id===modalId);
   if(!r){m.classList.remove("on");return;}
   const list=photoRows(r),c=cost(r);
@@ -209,8 +220,27 @@ function renderModal(){
     +'<div class="ids">SKU '+esc(r.sku)+' · INV# '+esc(r.inventory_number)+'</div>'
     +'<div class="grid">'+cells+'</div>';
   if(mode==="owner"){
-    body+='<button data-act="add">+ Add photos</button>'
-      +'<div style="margin-top:14px">'
+    body+='<button data-act="add">+ Add photos</button>';
+    body+='<div class="sect"><h3>DETAILS</h3>'
+      +'<div class="lbl">Title</div><input id="fTitle" value="'+val(r.title)+'">'
+      +'<div class="row2">'
+      +'<div><div class="lbl">Brand</div><input id="fBrand" value="'+val(r.brand)+'"></div>'
+      +'<div><div class="lbl">Model</div><input id="fModel" value="'+val(r.model)+'"></div>'
+      +'</div>'
+      +'<div class="row2">'
+      +'<div><div class="lbl">Condition</div><input id="fCond" value="'+val(r.condition)+'"></div>'
+      +'<div><div class="lbl">Category</div><input id="fCat" value="'+val(r.category)+'"></div>'
+      +'</div>'
+      +'<div class="row2">'
+      +'<div><div class="lbl">Location</div><input id="fLoc" value="'+val(r.storage_location)+'"></div>'
+      +'<div><div class="lbl">Status</div><select id="fStatus">'
+      +'<option value="available"'+(r.status==="available"?" selected":"")+'>available</option>'
+      +'<option value="sold"'+(r.status==="sold"?" selected":"")+'>sold</option>'
+      +'</select></div>'
+      +'</div>'
+      +'<div class="lbl">Internal notes</div><textarea id="fNotes">'+val(r.internal_notes)+'</textarea>'
+      +'</div>';
+    body+='<div class="sect"><h3>PRICES</h3>'
       +'<div class="row2">'
       +'<div><div class="lbl">Retail price</div>'
       +'<input id="pRetail" type="number" step="0.01" inputmode="decimal" placeholder="—" value="'
@@ -218,15 +248,28 @@ function renderModal(){
       +'<div><div class="lbl">Wholesale price</div>'
       +'<input id="pWhole" type="number" step="0.01" inputmode="decimal" placeholder="—" value="'
       +(c.wholesale_price==null?"":esc(c.wholesale_price))+'"></div>'
-      +'</div>'
-      +'<button data-act="save">Save prices</button></div>';
+      +'</div></div>';
+    body+='<button data-act="save">Save changes</button>';
+    if(saveNote)body+='<div class="ok" style="display:block">'+esc(saveNote)+'</div>';
+    body+='<div class="sect"><h3>COST — FROZEN AT APPROVAL</h3><div class="costs">'
+      +'<div><span>Hammer</span><span>'+money(c.hammer_cost)+'</span></div>'
+      +'<div><span>Buyer premium</span><span>'+money(c.buyer_premium_cost)+'</span></div>'
+      +'<div><span>Tax</span><span>'+money(c.tax_cost)+'</span></div>'
+      +'<div><span><b>Landed</b></span><span><b>'+money(c.landed_cost)+'</b></span></div>'
+      +'<div class="frozen">read-only · provenance</div>'
+      +'</div></div>';
+    body+='<div class="sect"><h3>ARCHIVE</h3>'
+      +'<button class="'+(armArchive?"armed":"danger")+'" data-act="arch">'
+      +(armArchive?"Really archive? Tap again":"Archive this unit")+'</button>'
+      +'<div class="lbl" style="margin-top:6px">Hides the unit from this viewer. Not reversible here.</div>'
+      +'</div>';
   }
   body+='<button class="ghost" data-act="close" style="margin-top:10px">Close</button>';
   $("#sheet").innerHTML=body;
   m.classList.add("on");
 }
 async function openUnit(id){
-  modalId=id;renderModal();
+  modalId=id;armArchive=false;saveNote="";renderModal();
   const r=rows.find(x=>x.id===id);
   if(!r)return;
   let changed=false;
@@ -239,7 +282,8 @@ async function openUnit(id){
   }
   if(changed&&modalId===id)renderModal();
 }
-async function reopen(id){await load();modalId=id;await openUnit(id);}
+async function reopen(id,note){await load();modalId=id;saveNote=note||"";await openUnit(id);
+  if(note){saveNote=note;renderModal();}}
 
 async function deletePhoto(pid){
   if(!confirm("Delete this photo? This cannot be undone."))return;
@@ -265,7 +309,8 @@ async function setMain(pid){
     await reopen(id);
   }catch(ex){console.error("setMain",ex);err(ex.message||String(ex));}
 }
-async function savePrices(){
+function txt(sel){const e=$(sel);if(!e)return null;const v=e.value.trim();return v===""?null:v;}
+async function saveAll(){
   const id=modalId;err("");
   const rv=($("#pRetail")?$("#pRetail").value:"").trim();
   const wv=($("#pWhole")?$("#pWhole").value:"").trim();
@@ -273,25 +318,42 @@ async function savePrices(){
   const whole=wv===""?null:Number(wv);
   if(retail!==null&&!isFinite(retail)){err("Retail price is not a number.");return;}
   if(whole!==null&&!isFinite(whole)){err("Wholesale price is not a number.");return;}
+  const st=$("#fStatus")?$("#fStatus").value:null;
+  if(st!=="available"&&st!=="sold"){err("Status must be available or sold.");return;}
+  const patch={title:txt("#fTitle"),brand:txt("#fBrand"),model:txt("#fModel"),
+    condition:txt("#fCond"),category:txt("#fCat"),storage_location:txt("#fLoc"),
+    internal_notes:txt("#fNotes"),status:st,selling_price:retail};
   try{
-    const {error:e1}=await sb.from("inventory").update({selling_price:retail}).eq("id",id);
+    const {error:e1}=await sb.from("inventory").update(patch).eq("id",id);
     if(e1)throw new Error("Save failed: "+e1.message);
     const {error:e2}=await sb.from("inventory_costs").update({wholesale_price:whole}).eq("inventory_id",id);
-    if(e2)throw new Error("Retail saved, wholesale failed: "+e2.message);
-    await reopen(id);
-  }catch(ex){console.error("savePrices",ex);err(ex.message||String(ex));}
+    if(e2)throw new Error("Details saved, wholesale price failed: "+e2.message);
+    await reopen(id,"Saved.");
+  }catch(ex){console.error("saveAll",ex);err(ex.message||String(ex));}
+}
+async function archiveUnit(){
+  if(!armArchive){armArchive=true;renderModal();return;}
+  const id=modalId;err("");
+  try{
+    const {error:e1}=await sb.from("inventory").update({archived:true}).eq("id",id);
+    if(e1)throw new Error("Archive failed: "+e1.message);
+    modalId=null;renderModal();
+    await load();
+  }catch(ex){console.error("archiveUnit",ex);armArchive=false;renderModal();err(ex.message||String(ex));}
 }
 
 $("#modal").addEventListener("click",e=>{
   if(e.target.id==="modal"){modalId=null;renderModal();return;}
   const b=e.target.closest("button");
-  if(!b)return;
+  if(!b){if(armArchive){armArchive=false;renderModal();}return;}
   const act=b.dataset.act;
+  if(act!=="arch"&&armArchive){armArchive=false;renderModal();}
   if(act==="close"){modalId=null;renderModal();}
   else if(act==="add"){pendingId=modalId;const fp=$("#filePick");fp.value="";fp.click();}
   else if(act==="del")deletePhoto(b.dataset.pid);
   else if(act==="main")setMain(b.dataset.pid);
-  else if(act==="save")savePrices();
+  else if(act==="save")saveAll();
+  else if(act==="arch")archiveUnit();
 });
 
 $("#list").addEventListener("click",e=>{
