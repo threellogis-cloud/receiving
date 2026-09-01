@@ -37,6 +37,7 @@
   .chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin-top:6px}
   .chip.available{background:#173417;color:var(--green)}
   .chip.sold{background:#341717;color:var(--red)}
+  .chip.ebay{background:#17342a;color:var(--green);margin-left:6px}
   .muted{color:var(--dim)}
   .err{border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;margin-top:10px;display:none}
   .ok{border:1px solid var(--green);color:var(--green);border-radius:10px;padding:10px;margin-top:10px;display:none}
@@ -75,6 +76,7 @@
   .st.pending{background:#333;color:var(--dim)}
   .shot{width:100%;border:1px solid var(--line);border-radius:8px;display:block;margin-bottom:10px}
   .warn{border:1px solid var(--amber);color:var(--amber);border-radius:8px;padding:8px;font-size:13px;margin-bottom:10px}
+  .warn.bad{border-color:var(--red);color:var(--red)}
   .tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
   .tags span{background:#101410;border:1px solid var(--line);border-radius:999px;padding:2px 9px;font-size:12px}
   .toggle{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;color:var(--dim)}
@@ -111,8 +113,8 @@
 
   <div id="ebayPanel" style="display:none">
     <div class="panel">
-      <div class="lbl">NELLIS PRODUCT PAGE</div>
-      <button id="labUpload">Upload &amp; extract</button>
+      <div class="lbl">EBAY TRACK</div>
+      <div id="trackList"></div>
       <div id="upStat" class="lbl" style="margin-top:8px"></div>
     </div>
     <div class="panel">
@@ -141,7 +143,7 @@
 <input id="labPick" type="file" accept="image/*" style="display:none">
 <div id="modal"><div class="sheet" id="sheet"></div></div>
 <div id="err" class="err"></div>
-<footer>inventory v9</footer>
+<footer>inventory v10</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -159,7 +161,7 @@ const $=s=>document.querySelector(s);
 let rows=[],filter="available",q="",photoCache={},busy={},pendingId=null;
 let mode="customer",modalId=null,modalUrls={},armArchive=false,saveNote="";
 let exRows=[],exOpen=null,exShot=null,exNote="",exArm=false,showArch=false;
-let feeRates=[];
+let feeRates=[],pendingEbayUnit=null;
 
 function err(m){const e=$("#err");e.textContent=m||"";e.style.display=m?"block":"none";}
 function showAuth(){$("#authPanel").style.display="block";$("#app").style.display="none";}
@@ -187,7 +189,7 @@ async function load(){
   err("");
   const {data,error}=await sb.from("inventory").select(
     "id,sku,inventory_number,title,status,archived,brand,model,condition,category,"+
-    "storage_location,internal_notes,selling_price,ebay_category_id,packaging_cost,"+
+    "storage_location,internal_notes,selling_price,ebay_category_id,packaging_cost,ebay_tracked,"+
     "nellis_brand,nellis_color,nellis_condition_tags,nellis_estimated_retail,"+
     "nellis_item_length_in,nellis_item_width_in,nellis_item_height_in,"+
     "nellis_item_weight_lb,nellis_package_weight_lb,nellis_sales_rank,"+
@@ -280,7 +282,7 @@ function render(){
     $("#aG").textContent=money(PACKAGING_COST);
     $("#aS").textContent=money(ASSUMED_SHIP);
     $("#aTax").textContent=(ASSUMED_TAX*100).toFixed(1)+"%";
-    renderEx();return;
+    renderTrack();renderEx();return;
   }
   const v=visible();
   const total=v.reduce((a,r)=>a+(Number(cost(r).landed_cost)||0),0);
@@ -308,6 +310,7 @@ function render(){
       +moneyLine
       +(extra?'<div class="sub">'+extra+'</div>':"")
       +'<span class="chip '+esc(r.status)+'">'+esc(r.status)+'</span>'
+      +(mode==="owner"&&r.ebay_tracked?'<span class="chip ebay">eBay</span>':"")
       +'</div></div>';
   }).join("")||'<div class="panel muted">No units match.</div>';
 }
@@ -322,10 +325,36 @@ async function hydratePhotos(){
     const {data}=await sb.storage.from("photos-internal").createSignedUrl(path,3600);
     photoCache[r.id]=(data&&data.signedUrl)||null;changed=true;
   }
-  if(changed&&mode!=="ebay")render();
+  if(changed)render();
 }
 </script>
 <script>
+function renderTrack(){
+  const el=$("#trackList");
+  if(!el)return;
+  const t=rows.filter(r=>r.ebay_tracked);
+  if(!t.length){el.innerHTML='<div class="muted">No units in eBay track. Open a unit in Owner mode and tap "Push to eBay track".</div>';return;}
+  el.innerHTML=t.map(r=>{
+    const c=cost(r),ph=photoCache[r.id];
+    const tile=ph?'<img src="'+ph+'" alt="">':'<span class="muted">no photo</span>';
+    return '<div class="card">'
+      +'<div class="ph" data-tid="'+esc(r.id)+'">'+tile+'</div>'
+      +'<div class="info">'
+      +'<div class="t">'+(esc(r.title)||'<span class="muted">untitled</span>')+'</div>'
+      +'<div class="ids">SKU '+esc(r.sku)+' · INV# '+esc(r.inventory_number)+'</div>'
+      +'<div class="money"><b>'+money(c.landed_cost)+'</b> landed'
+      +(r.nellis_estimated_retail!=null?' <span class="muted">· Nellis retail '+money(r.nellis_estimated_retail)+'</span>':"")
+      +'</div>'
+      +'<button data-up="'+esc(r.id)+'" style="margin-top:8px;padding:8px;font-size:13px">Upload product page</button>'
+      +'</div></div>';
+  }).join("");
+}
+$("#ebayPanel").addEventListener("click",e=>{
+  const up=e.target.closest("[data-up]");
+  if(up){pendingEbayUnit=up.dataset.up;const fp=$("#labPick");fp.value="";fp.click();return;}
+  const tile=e.target.closest("[data-tid]");
+  if(tile)openUnit(tile.dataset.tid);
+});
 async function loadEx(){
   const {data,error}=await sb.from("product_extractions")
     .select("id,inventory_id,inventory_number,storage_path,attempt,status,block_reasons,error_text,payload,archived,created_at")
@@ -361,7 +390,8 @@ function renderExDetail(){
   const x=exRows.find(r=>r.id===exOpen);
   if(!x){exOpen=null;renderEx();return;}
   const p=x.payload||{};
-  const match=rows.find(r=>r.inventory_number===String(p.inventory_number||""));
+  const linked=x.inventory_id?rows.find(r=>r.id===x.inventory_id):null;
+  const match=linked||rows.find(r=>r.inventory_number===String(p.inventory_number||""));
   let body='<button class="ghost" data-ex-act="back">&larr; Back to list</button>';
   if(x.archived)body+='<div class="warn" style="margin-top:10px">This extraction is archived.</div>';
   body+=exShot?'<img class="shot" src="'+exShot+'" alt="">':'<div class="muted" style="margin:10px 0">loading screenshot…</div>';
@@ -369,10 +399,19 @@ function renderExDetail(){
   if(x.status==="error")body+='<div class="warn"><b>ERROR</b><br>'+esc(x.error_text||"")+'</div>';
   body+='<div class="warn">Check every field against the screenshot. Extraction has produced '
        +'a wrong inventory number before.</div>';
+  const pn=String(p.inventory_number||"");
+  if(linked&&pn&&String(linked.inventory_number||"")!==pn){
+    body+='<div class="warn bad"><b>NUMBER MISMATCH</b><br>'
+      +'This upload was made against INV# '+esc(linked.inventory_number)
+      +' but the extraction read '+esc(pn)+'. Either this is the wrong product page for that unit, '
+      +'or the extraction transposed digits. Verify against the screenshot before promoting.</div>';
+  }
   body+='<div class="lbl">Inventory number (bridge key — confirm digit by digit)</div>'
        +'<input id="xInv" inputmode="numeric" value="'+val(p.inventory_number)+'">';
   body+='<div class="lbl" style="margin-bottom:10px">'
-       +(match?('Matches SKU '+esc(match.sku)+' — '+esc(match.title||"")):'No matching unit. Pick one below or leave unlinked.')
+       +(linked?('Linked to SKU '+esc(linked.sku)+' — '+esc(linked.title||"")):
+         match?('Matches SKU '+esc(match.sku)+' — '+esc(match.title||"")):
+         'No matching unit. Pick one below or leave unlinked.')
        +'</div>';
   const opts=['<option value="">— no unit —</option>'].concat(rows.map(r=>
     '<option value="'+esc(r.id)+'"'+(match&&match.id===r.id?" selected":"")+'>'
@@ -461,7 +500,7 @@ async function promoteEx(){
     exNote="Promoted.";renderEx();
   }catch(ex){console.error("promoteEx",ex);err(ex.message||String(ex));}
 }
-async function runExtract(path){
+async function runExtract(path,linkUnitId){
   $("#upStat").textContent="extracting…";
   try{
     const {data:{session}}=await sb.auth.getSession();
@@ -474,14 +513,21 @@ async function runExtract(path){
     });
     const out=await res.json().catch(()=>({error:"bad response"}));
     if(!res.ok)throw new Error(out.error||("http "+res.status));
-    $("#upStat").textContent="done — status: "+out.status;
+    if(linkUnitId){
+      const {error:lnErr}=await sb.from("product_extractions")
+        .update({inventory_id:linkUnitId}).eq("storage_path",path);
+      if(lnErr){console.error("link failed",lnErr);
+        $("#upStat").textContent="done (status "+out.status+") but linking failed: "+lnErr.message;
+        exOpen=null;exShot=null;await loadEx();return;}
+    }
+    $("#upStat").textContent="done — status: "+out.status+(linkUnitId?" · linked to unit":"");
     exOpen=null;exShot=null;
     await loadEx();
   }catch(ex){console.error("runExtract",ex);$("#upStat").textContent="ERROR: "+(ex.message||ex);}
 }
-$("#labUpload").onclick=()=>{const fp=$("#labPick");fp.value="";fp.click();};
 $("#labPick").onchange=async e=>{
   const f=(e.target.files||[])[0];
+  const unitId=pendingEbayUnit;pendingEbayUnit=null;
   if(!f)return;
   $("#upStat").textContent="uploading…";
   try{
@@ -490,7 +536,7 @@ $("#labPick").onchange=async e=>{
     const {error:upErr}=await sb.storage.from("product-shots")
       .upload(path,f,{contentType:f.type||"image/jpeg",upsert:false});
     if(upErr)throw new Error("Upload failed: "+upErr.message);
-    await runExtract(path);
+    await runExtract(path,unitId);
   }catch(ex){console.error("labUpload",ex);$("#upStat").textContent="ERROR: "+(ex.message||ex);}
 };
 $("#exRefresh").onclick=loadEx;
@@ -503,7 +549,7 @@ $("#exList").addEventListener("click",e=>{
     if(a==="back"){exOpen=null;exShot=null;exNote="";exArm=false;renderEx();}
     else if(a==="promote")promoteEx();
     else if(a==="rerun"){const x=exRows.find(r=>r.id===exOpen);
-      if(x){$("#upStat").textContent="";runExtract(x.storage_path);}}
+      if(x){$("#upStat").textContent="";runExtract(x.storage_path,x.inventory_id||null);}}
     else if(a==="arch"){if(!exArm){exArm=true;renderEx();}else setArchived(true);}
     else if(a==="unarch")setArchived(false);
     return;
@@ -560,6 +606,12 @@ function renderModal(){
     +'<div class="grid">'+cells+'</div>';
   if(mode==="owner"){
     body+='<button data-act="add">+ Add photos</button>';
+    body+='<div class="sect"><h3>EBAY TRACK</h3>'
+      +'<button data-act="track"'+(r.ebay_tracked?' class="ghost"':'')+'>'
+      +(r.ebay_tracked?'Remove from eBay track':'Push to eBay track')+'</button>'
+      +'<div class="lbl" style="margin-top:6px">'
+      +(r.ebay_tracked?'This unit is listed in the eBay tab.':'Adds this unit to the eBay tab for product-page upload and pricing.')
+      +'</div></div>';
     body+='<div class="sect"><h3>DETAILS</h3>'
       +'<div class="lbl">Title</div><input id="fTitle" value="'+val(r.title)+'">'
       +'<div class="row2">'
@@ -666,6 +718,17 @@ async function setMain(pid){
     await reopen(id);
   }catch(ex){console.error("setMain",ex);err(ex.message||String(ex));}
 }
+async function toggleTrack(){
+  const id=modalId;
+  const r=rows.find(x=>x.id===id);
+  if(!r)return;
+  err("");
+  try{
+    const {error:e1}=await sb.from("inventory").update({ebay_tracked:!r.ebay_tracked}).eq("id",id);
+    if(e1)throw new Error("Update failed: "+e1.message);
+    await reopen(id,r.ebay_tracked?"Removed from eBay track.":"Pushed to eBay track.");
+  }catch(ex){console.error("toggleTrack",ex);err(ex.message||String(ex));}
+}
 async function saveAll(){
   const id=modalId;err("");
   const rv=($("#pRetail")?$("#pRetail").value:"").trim();
@@ -712,6 +775,7 @@ $("#modal").addEventListener("click",e=>{
   else if(act==="main")setMain(b.dataset.pid);
   else if(act==="save")saveAll();
   else if(act==="arch")archiveUnit();
+  else if(act==="track")toggleTrack();
   else if(act==="useprice"){const el=$("#pRetail");if(el){el.value=b.dataset.p;
     el.scrollIntoView({block:"center"});}}
 });
@@ -769,6 +833,7 @@ document.querySelectorAll(".modebar button").forEach(b=>{
   b.onclick=()=>{document.querySelectorAll(".modebar button").forEach(x=>x.classList.remove("on"));
     b.classList.add("on");mode=b.dataset.m;
     if(mode==="ebay"&&!exRows.length)loadEx(); else render();
+    if(mode==="ebay")render();
     if(modalId)renderModal();};
 });
 boot();
