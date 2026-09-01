@@ -67,6 +67,7 @@
   button.armed{background:var(--red);color:#141414;border:1px solid var(--red)}
   pre{background:#101410;border:1px solid var(--line);border-radius:8px;padding:10px;font:12px/1.4 var(--mono);white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;margin:8px 0 0}
   .exrow{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer}
+  .exrow.arch{opacity:.55}
   .exrow .st{font:700 11px var(--mono);padding:1px 7px;border-radius:999px;display:inline-block}
   .st.ok{background:#173417;color:var(--green)}
   .st.blocked{background:#341717;color:var(--red)}
@@ -76,6 +77,8 @@
   .warn{border:1px solid var(--amber);color:var(--amber);border-radius:8px;padding:8px;font-size:13px;margin-bottom:10px}
   .tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
   .tags span{background:#101410;border:1px solid var(--line);border-radius:999px;padding:2px 9px;font-size:12px}
+  .toggle{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;color:var(--dim)}
+  .toggle input{width:auto;margin:0}
 </style>
 </head>
 <body>
@@ -113,6 +116,7 @@
     </div>
     <div class="panel">
       <div class="lbl">EXTRACTIONS</div>
+      <label class="toggle"><input type="checkbox" id="showArch"> show archived</label>
       <div id="exList"></div>
       <button id="exRefresh" class="ghost">Refresh</button>
     </div>
@@ -126,7 +130,7 @@
 <input id="labPick" type="file" accept="image/*" style="display:none">
 <div id="modal"><div class="sheet" id="sheet"></div></div>
 <div id="err" class="err"></div>
-<footer>inventory v7</footer>
+<footer>inventory v8</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -136,7 +140,7 @@ const sb=window.supabase.createClient(SB_URL,SB_KEY);
 const $=s=>document.querySelector(s);
 let rows=[],filter="available",q="",photoCache={},busy={},pendingId=null;
 let mode="customer",modalId=null,modalUrls={},armArchive=false,saveNote="";
-let exRows=[],exOpen=null,exShot=null,exNote="";
+let exRows=[],exOpen=null,exShot=null,exNote="",exArm=false,showArch=false;
 
 function err(m){const e=$("#err");e.textContent=m||"";e.style.display=m?"block":"none";}
 function showAuth(){$("#authPanel").style.display="block";$("#app").style.display="none";}
@@ -243,22 +247,27 @@ async function hydratePhotos(){
 <script>
 async function loadEx(){
   const {data,error}=await sb.from("product_extractions")
-    .select("id,inventory_id,inventory_number,storage_path,attempt,status,block_reasons,error_text,payload,created_at")
-    .order("created_at",{ascending:false}).limit(50);
+    .select("id,inventory_id,inventory_number,storage_path,attempt,status,block_reasons,error_text,payload,archived,created_at")
+    .order("created_at",{ascending:false}).limit(100);
   if(error){err("Extractions load failed: "+error.message);return;}
   exRows=data||[];renderEx();
 }
+function exVisible(){return exRows.filter(x=>showArch?true:!x.archived);}
 function renderEx(){
   if(exOpen){renderExDetail();return;}
   const el=$("#exList");
-  if(!exRows.length){el.innerHTML='<div class="muted">No extractions yet.</div>';return;}
-  el.innerHTML=exRows.map(x=>{
+  const v=exVisible();
+  if(!v.length){el.innerHTML='<div class="muted">'
+    +(exRows.length?'No active extractions. Tick "show archived" to see them.':'No extractions yet.')
+    +'</div>';return;}
+  el.innerHTML=v.map(x=>{
     const p=x.payload||{};
     const title=p.title||x.inventory_number||"(untitled)";
     const linked=x.inventory_id?"linked":"unlinked";
-    return '<div class="exrow" data-ex="'+esc(x.id)+'">'
+    return '<div class="exrow'+(x.archived?" arch":"")+'" data-ex="'+esc(x.id)+'">'
       +'<div class="t">'+esc(title)+'</div>'
-      +'<div class="ids">INV# '+esc(x.inventory_number||"—")+' · attempt '+x.attempt+' · '+linked+'</div>'
+      +'<div class="ids">INV# '+esc(x.inventory_number||"—")+' · attempt '+x.attempt+' · '+linked
+      +(x.archived?' · archived':'')+'</div>'
       +'<span class="st '+esc(x.status)+'">'+esc(x.status)+'</span>'
       +'</div>';
   }).join("");
@@ -273,6 +282,7 @@ function renderExDetail(){
   const p=x.payload||{};
   const match=rows.find(r=>r.inventory_number===String(p.inventory_number||""));
   let body='<button class="ghost" data-ex-act="back">&larr; Back to list</button>';
+  if(x.archived)body+='<div class="warn" style="margin-top:10px">This extraction is archived.</div>';
   body+=exShot?'<img class="shot" src="'+exShot+'" alt="">':'<div class="muted" style="margin:10px 0">loading screenshot…</div>';
   if(x.status==="blocked"){
     body+='<div class="warn"><b>BLOCKED</b><br>'+esc(JSON.stringify(x.block_reasons))+'</div>';
@@ -318,15 +328,35 @@ function renderExDetail(){
   body+='<button data-ex-act="promote">Confirm &amp; promote to unit</button>';
   if(exNote)body+='<div class="ok" style="display:block">'+esc(exNote)+'</div>';
   body+='<button class="ghost" data-ex-act="rerun" style="margin-top:8px">Re-extract this screenshot</button>';
+  body+='<div class="sect"><h3>ARCHIVE</h3>'
+    +(x.archived
+      ? '<button class="ghost" data-ex-act="unarch">Restore to active list</button>'
+      : '<button class="'+(exArm?"armed":"danger")+'" data-ex-act="arch">'
+        +(exArm?"Really archive? Tap again":"Archive this extraction")+'</button>')
+    +'<div class="lbl" style="margin-top:6px">Hides it from the list. Screenshot and record are kept.</div>'
+    +'</div>';
   $("#exList").innerHTML=body;
 }
 async function openEx(id){
-  exOpen=id;exShot=null;exNote="";renderEx();
+  exOpen=id;exShot=null;exNote="";exArm=false;renderEx();
   const x=exRows.find(r=>r.id===id);
   if(!x)return;
   const {data}=await sb.storage.from("product-shots").createSignedUrl(x.storage_path,3600);
   exShot=(data&&data.signedUrl)||null;
   if(exOpen===id)renderEx();
+}
+async function setArchived(flag){
+  const x=exRows.find(r=>r.id===exOpen);
+  if(!x)return;
+  err("");
+  try{
+    const {error:e1}=await sb.from("product_extractions").update({archived:flag}).eq("id",x.id);
+    if(e1)throw new Error("Archive failed: "+e1.message);
+    exArm=false;
+    await loadEx();
+    if(flag){exOpen=null;exShot=null;}
+    renderEx();
+  }catch(ex){console.error("setArchived",ex);exArm=false;renderEx();err(ex.message||String(ex));}
 }
 async function promoteEx(){
   const x=exRows.find(r=>r.id===exOpen);
@@ -375,6 +405,7 @@ async function runExtract(path){
     const out=await res.json().catch(()=>({error:"bad response"}));
     if(!res.ok)throw new Error(out.error||("http "+res.status));
     $("#upStat").textContent="done — status: "+out.status;
+    exOpen=null;exShot=null;
     await loadEx();
   }catch(ex){console.error("runExtract",ex);$("#upStat").textContent="ERROR: "+(ex.message||ex);}
 }
@@ -393,14 +424,18 @@ $("#labPick").onchange=async e=>{
   }catch(ex){console.error("labUpload",ex);$("#upStat").textContent="ERROR: "+(ex.message||ex);}
 };
 $("#exRefresh").onclick=loadEx;
+$("#showArch").onchange=e=>{showArch=e.target.checked;exOpen=null;exShot=null;renderEx();};
 $("#exList").addEventListener("click",e=>{
   const b=e.target.closest("[data-ex-act]");
   if(b){
     const a=b.dataset.exAct;
-    if(a==="back"){exOpen=null;exShot=null;exNote="";renderEx();}
+    if(a!=="arch"&&exArm){exArm=false;}
+    if(a==="back"){exOpen=null;exShot=null;exNote="";exArm=false;renderEx();}
     else if(a==="promote")promoteEx();
     else if(a==="rerun"){const x=exRows.find(r=>r.id===exOpen);
       if(x){$("#upStat").textContent="";runExtract(x.storage_path);}}
+    else if(a==="arch"){if(!exArm){exArm=true;renderEx();}else setArchived(true);}
+    else if(a==="unarch")setArchived(false);
     return;
   }
   const row=e.target.closest("[data-ex]");
