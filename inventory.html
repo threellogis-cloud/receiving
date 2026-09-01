@@ -79,6 +79,7 @@
   .tags span{background:#101410;border:1px solid var(--line);border-radius:999px;padding:2px 9px;font-size:12px}
   .toggle{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;color:var(--dim)}
   .toggle input{width:auto;margin:0}
+  .bigprice{font-size:26px;font-weight:800;color:var(--amber);text-align:center;padding:6px 0}
 </style>
 </head>
 <body>
@@ -115,6 +116,16 @@
       <div id="upStat" class="lbl" style="margin-top:8px"></div>
     </div>
     <div class="panel">
+      <div class="lbl">PRICING ASSUMPTIONS</div>
+      <div class="costs">
+        <div><span>Target profit</span><span id="aT"></span></div>
+        <div><span>Packaging per item</span><span id="aG"></span></div>
+        <div><span>Assumed shipping</span><span id="aS"></span></div>
+        <div><span>Assumed sales tax</span><span id="aTax"></span></div>
+        <div class="frozen">target, not guarantee · reconcile against actual sales</div>
+      </div>
+    </div>
+    <div class="panel">
       <div class="lbl">EXTRACTIONS</div>
       <label class="toggle"><input type="checkbox" id="showArch"> show archived</label>
       <div id="exList"></div>
@@ -130,10 +141,17 @@
 <input id="labPick" type="file" accept="image/*" style="display:none">
 <div id="modal"><div class="sheet" id="sheet"></div></div>
 <div id="err" class="err"></div>
-<footer>inventory v8</footer>
+<footer>inventory v9</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+/* ---- PRICING ASSUMPTIONS — Roc-ruled, change here ---- */
+const PRICE_TARGET   = 10.00;  /* Roc ruling: approximate target, not guarantee */
+const PACKAGING_COST = 1.50;   /* Roc, 2026-08-31 */
+const ASSUMED_SHIP   = 10.00;  /* Roc: "$8 to 12 ballpark" — midpoint */
+const ASSUMED_TAX    = 0.07;   /* Roc confirmed 7% */
+/* ------------------------------------------------------ */
+
 const SB_URL="https://fuebtrlaroowedjxjucn.supabase.co";
 const SB_KEY="sb_publishable_-CrujyffVlSXhnst670YEA_-0aRK4Ti";
 const sb=window.supabase.createClient(SB_URL,SB_KEY);
@@ -141,10 +159,12 @@ const $=s=>document.querySelector(s);
 let rows=[],filter="available",q="",photoCache={},busy={},pendingId=null;
 let mode="customer",modalId=null,modalUrls={},armArchive=false,saveNote="";
 let exRows=[],exOpen=null,exShot=null,exNote="",exArm=false,showArch=false;
+let feeRates=[];
 
 function err(m){const e=$("#err");e.textContent=m||"";e.style.display=m?"block":"none";}
 function showAuth(){$("#authPanel").style.display="block";$("#app").style.display="none";}
-async function enter(){$("#authPanel").style.display="none";$("#app").style.display="block";await load();}
+async function enter(){$("#authPanel").style.display="none";$("#app").style.display="block";
+  await loadFees();await load();}
 async function boot(){const {data:{session}}=await sb.auth.getSession();session?enter():showAuth();}
 
 $("#btnIn").onclick=async()=>{
@@ -154,11 +174,20 @@ $("#btnIn").onclick=async()=>{
 };
 $("#btnOut").onclick=async()=>{await sb.auth.signOut();location.reload();};
 
+async function loadFees(){
+  const {data,error}=await sb.from("ebay_fee_rates")
+    .select("id,category_id,category_label,fee_rate,per_order_low,per_order_high,per_order_threshold,effective_from,effective_to,is_default")
+    .order("is_default",{ascending:false});
+  if(error){console.error("loadFees",error);feeRates=[];return;}
+  const today=new Date().toISOString().slice(0,10);
+  feeRates=(data||[]).filter(r=>
+    (!r.effective_from||r.effective_from<=today)&&(!r.effective_to||r.effective_to>=today));
+}
 async function load(){
   err("");
   const {data,error}=await sb.from("inventory").select(
     "id,sku,inventory_number,title,status,archived,brand,model,condition,category,"+
-    "storage_location,internal_notes,selling_price,"+
+    "storage_location,internal_notes,selling_price,ebay_category_id,packaging_cost,"+
     "nellis_brand,nellis_color,nellis_condition_tags,nellis_estimated_retail,"+
     "nellis_item_length_in,nellis_item_width_in,nellis_item_height_in,"+
     "nellis_item_weight_lb,nellis_package_weight_lb,nellis_sales_rank,"+
@@ -187,6 +216,52 @@ function num(sel){const e=$(sel);if(!e)return null;const v=e.value.trim();if(v==
 function txt(sel){const e=$(sel);if(!e)return null;const v=e.value.trim();return v===""?null:v;}
 </script>
 <script>
+/* ---- PRICING SOLVER ----
+   P = [ T + L + G + X + k + f*S*(1+t) ] / [ 1 - f*(1+t) ]
+   Fee base includes item price + buyer-paid shipping + sales tax.
+   Per-order fee branches on order total vs threshold.
+------------------------- */
+function rateFor(r){
+  const cid=r.ebay_category_id;
+  if(cid){
+    const hit=feeRates.find(x=>x.category_id&&String(x.category_id)===String(cid));
+    if(hit)return {row:hit,provisional:false,reason:null};
+  }
+  const def=feeRates.find(x=>x.is_default);
+  if(!def)return {row:null,provisional:true,reason:"No fee rates loaded."};
+  return {row:def,provisional:true,
+    reason:cid?"No maintained rate for this category — default used.":"No eBay category set — default used."};
+}
+function solvePrice(r){
+  const c=cost(r);
+  const L=c.landed_cost==null?null:Number(c.landed_cost);
+  if(L==null)return {ok:false,why:"No landed cost on this unit."};
+  const fr=rateFor(r);
+  if(!fr.row)return {ok:false,why:fr.reason};
+  const f=Number(fr.row.fee_rate);
+  const G=r.packaging_cost==null?PACKAGING_COST:Number(r.packaging_cost);
+  const S=ASSUMED_SHIP, t=ASSUMED_TAX, T=PRICE_TARGET, X=0;
+  const denom=1-f*(1+t);
+  if(denom<=0)return {ok:false,why:"Fee rate too high to solve."};
+  const lo=Number(fr.row.per_order_low), hi=Number(fr.row.per_order_high);
+  const thr=Number(fr.row.per_order_threshold);
+  let k=hi,P=0;
+  for(let i=0;i<3;i++){
+    P=(T+L+G+X+k+f*S*(1+t))/denom;
+    const orderTotal=P+S;
+    const k2=orderTotal<=thr?lo:hi;
+    if(k2===k)break;
+    k=k2;
+  }
+  const tax=t*(P+S);
+  const feeBase=P+S+tax;
+  const fvf=f*feeBase;
+  const net=P-fvf-k-L-G-X;
+  return {ok:true,price:P,L:L,G:G,S:S,t:t,f:f,k:k,tax:tax,feeBase:feeBase,fvf:fvf,net:net,
+    label:fr.row.category_label,provisional:fr.provisional,reason:fr.reason};
+}
+</script>
+<script>
 function visible(){
   return rows.filter(r=>{
     if(filter!=="all"&&r.status!==filter)return false;
@@ -200,7 +275,13 @@ function render(){
   $("#ebayPanel").style.display = isEbay ? "block" : "none";
   $("#invControls").style.display = isEbay ? "none" : "block";
   $("#list").style.display = isEbay ? "none" : "block";
-  if(isEbay){renderEx();return;}
+  if(isEbay){
+    $("#aT").textContent=money(PRICE_TARGET);
+    $("#aG").textContent=money(PACKAGING_COST);
+    $("#aS").textContent=money(ASSUMED_SHIP);
+    $("#aTax").textContent=(ASSUMED_TAX*100).toFixed(1)+"%";
+    renderEx();return;
+  }
   const v=visible();
   const total=v.reduce((a,r)=>a+(Number(cost(r).landed_cost)||0),0);
   $("#count").textContent=v.length+" unit"+(v.length===1?"":"s")
@@ -284,17 +365,13 @@ function renderExDetail(){
   let body='<button class="ghost" data-ex-act="back">&larr; Back to list</button>';
   if(x.archived)body+='<div class="warn" style="margin-top:10px">This extraction is archived.</div>';
   body+=exShot?'<img class="shot" src="'+exShot+'" alt="">':'<div class="muted" style="margin:10px 0">loading screenshot…</div>';
-  if(x.status==="blocked"){
-    body+='<div class="warn"><b>BLOCKED</b><br>'+esc(JSON.stringify(x.block_reasons))+'</div>';
-  }
-  if(x.status==="error"){
-    body+='<div class="warn"><b>ERROR</b><br>'+esc(x.error_text||"")+'</div>';
-  }
+  if(x.status==="blocked")body+='<div class="warn"><b>BLOCKED</b><br>'+esc(JSON.stringify(x.block_reasons))+'</div>';
+  if(x.status==="error")body+='<div class="warn"><b>ERROR</b><br>'+esc(x.error_text||"")+'</div>';
   body+='<div class="warn">Check every field against the screenshot. Extraction has produced '
        +'a wrong inventory number before.</div>';
   body+='<div class="lbl">Inventory number (bridge key — confirm digit by digit)</div>'
        +'<input id="xInv" inputmode="numeric" value="'+val(p.inventory_number)+'">';
-  body+='<div id="matchNote" class="lbl" style="margin-bottom:10px">'
+  body+='<div class="lbl" style="margin-bottom:10px">'
        +(match?('Matches SKU '+esc(match.sku)+' — '+esc(match.title||"")):'No matching unit. Pick one below or leave unlinked.')
        +'</div>';
   const opts=['<option value="">— no unit —</option>'].concat(rows.map(r=>
@@ -368,15 +445,10 @@ async function promoteEx(){
   if(!unitId){err("Pick a unit to link, or this extraction has nothing to promote to.");return;}
   const tags=(x.payload||{}).condition_tags;
   const patch={
-    nellis_brand:txt("#xBrand"),
-    nellis_color:txt("#xColor"),
-    nellis_item_length_in:num("#xL"),
-    nellis_item_width_in:num("#xW"),
-    nellis_item_height_in:num("#xH"),
-    nellis_item_weight_lb:num("#xIW"),
-    nellis_package_weight_lb:num("#xPW"),
-    nellis_estimated_retail:num("#xRetail"),
-    nellis_sales_rank:num("#xRank"),
+    nellis_brand:txt("#xBrand"),nellis_color:txt("#xColor"),
+    nellis_item_length_in:num("#xL"),nellis_item_width_in:num("#xW"),nellis_item_height_in:num("#xH"),
+    nellis_item_weight_lb:num("#xIW"),nellis_package_weight_lb:num("#xPW"),
+    nellis_estimated_retail:num("#xRetail"),nellis_sales_rank:num("#xRank"),
     nellis_condition_tags:Array.isArray(tags)?tags:null
   };
   try{
@@ -385,10 +457,8 @@ async function promoteEx(){
     const {error:e2}=await sb.from("product_extractions")
       .update({inventory_id:unitId,inventory_number:invNum}).eq("id",x.id);
     if(e2)throw new Error("Unit updated but extraction link failed: "+e2.message);
-    await load();
-    await loadEx();
-    exNote="Promoted.";
-    renderEx();
+    await load();await loadEx();
+    exNote="Promoted.";renderEx();
   }catch(ex){console.error("promoteEx",ex);err(ex.message||String(ex));}
 }
 async function runExtract(path){
@@ -429,7 +499,7 @@ $("#exList").addEventListener("click",e=>{
   const b=e.target.closest("[data-ex-act]");
   if(b){
     const a=b.dataset.exAct;
-    if(a!=="arch"&&exArm){exArm=false;}
+    if(a!=="arch"&&exArm)exArm=false;
     if(a==="back"){exOpen=null;exShot=null;exNote="";exArm=false;renderEx();}
     else if(a==="promote")promoteEx();
     else if(a==="rerun"){const x=exRows.find(r=>r.id===exOpen);
@@ -443,6 +513,29 @@ $("#exList").addEventListener("click",e=>{
 });
 </script>
 <script>
+function pricingBlock(r){
+  const s=solvePrice(r);
+  if(!s.ok)return '<div class="sect"><h3>SUGGESTED PRICE</h3>'
+    +'<div class="warn">Cannot calculate: '+esc(s.why)+'</div></div>';
+  let h='<div class="sect"><h3>SUGGESTED PRICE</h3>';
+  if(s.provisional)h+='<div class="warn"><b>PROVISIONAL</b><br>'+esc(s.reason)
+    +' This price is not authoritative until a category rate is set.</div>';
+  h+='<div class="bigprice">'+money(s.price)+'</div>'
+    +'<div class="costs">'
+    +'<div><span>Landed cost</span><span>'+money(s.L)+'</span></div>'
+    +'<div><span>Packaging</span><span>'+money(s.G)+'</span></div>'
+    +'<div><span>Assumed shipping (buyer pays)</span><span>'+money(s.S)+'</span></div>'
+    +'<div><span>Assumed tax @ '+(s.t*100).toFixed(1)+'%</span><span>'+money(s.tax)+'</span></div>'
+    +'<div><span>Fee base</span><span>'+money(s.feeBase)+'</span></div>'
+    +'<div><span>eBay fee @ '+(s.f*100).toFixed(2)+'%</span><span>-'+money(s.fvf).slice(1)+'</span></div>'
+    +'<div><span>Per-order fee</span><span>-'+money(s.k).slice(1)+'</span></div>'
+    +'<div><span><b>Net to you</b></span><span><b>'+money(s.net)+'</b></span></div>'
+    +'<div class="frozen">rate: '+esc(s.label)+' · target not guarantee</div>'
+    +'</div>'
+    +'<button data-act="useprice" data-p="'+s.price.toFixed(2)+'" style="margin-top:10px">Use this price</button>'
+    +'</div>';
+  return h;
+}
 function renderModal(){
   const m=$("#modal");
   if(!modalId){m.classList.remove("on");$("#sheet").innerHTML="";armArchive=false;saveNote="";return;}
@@ -486,6 +579,7 @@ function renderModal(){
       +'</div>'
       +'<div class="lbl">Internal notes</div><textarea id="fNotes">'+val(r.internal_notes)+'</textarea>'
       +'</div>';
+    body+=pricingBlock(r);
     body+='<div class="sect"><h3>PRICES</h3>'
       +'<div class="row2">'
       +'<div><div class="lbl">Retail price</div>'
@@ -494,7 +588,11 @@ function renderModal(){
       +'<div><div class="lbl">Wholesale price</div>'
       +'<input id="pWhole" type="number" step="0.01" inputmode="decimal" placeholder="—" value="'
       +(c.wholesale_price==null?"":esc(c.wholesale_price))+'"></div>'
-      +'</div></div>';
+      +'</div>'
+      +'<div class="lbl">Packaging cost (blank = default '+money(PACKAGING_COST)+')</div>'
+      +'<input id="pPack" type="number" step="0.01" inputmode="decimal" placeholder="'+PACKAGING_COST.toFixed(2)+'" value="'
+      +(r.packaging_cost==null?"":esc(r.packaging_cost))+'">'
+      +'</div>';
     body+='<button data-act="save">Save changes</button>';
     if(saveNote)body+='<div class="ok" style="display:block">'+esc(saveNote)+'</div>';
     const hasNellis = r.nellis_brand||r.nellis_item_length_in||r.nellis_package_weight_lb
@@ -572,15 +670,18 @@ async function saveAll(){
   const id=modalId;err("");
   const rv=($("#pRetail")?$("#pRetail").value:"").trim();
   const wv=($("#pWhole")?$("#pWhole").value:"").trim();
+  const pk=($("#pPack")?$("#pPack").value:"").trim();
   const retail=rv===""?null:Number(rv);
   const whole=wv===""?null:Number(wv);
+  const pack=pk===""?null:Number(pk);
   if(retail!==null&&!isFinite(retail)){err("Retail price is not a number.");return;}
   if(whole!==null&&!isFinite(whole)){err("Wholesale price is not a number.");return;}
+  if(pack!==null&&!isFinite(pack)){err("Packaging cost is not a number.");return;}
   const st=$("#fStatus")?$("#fStatus").value:null;
   if(st!=="available"&&st!=="sold"){err("Status must be available or sold.");return;}
   const patch={title:txt("#fTitle"),brand:txt("#fBrand"),model:txt("#fModel"),
     condition:txt("#fCond"),category:txt("#fCat"),storage_location:txt("#fLoc"),
-    internal_notes:txt("#fNotes"),status:st,selling_price:retail};
+    internal_notes:txt("#fNotes"),status:st,selling_price:retail,packaging_cost:pack};
   try{
     const {error:e1}=await sb.from("inventory").update(patch).eq("id",id);
     if(e1)throw new Error("Save failed: "+e1.message);
@@ -595,8 +696,7 @@ async function archiveUnit(){
   try{
     const {error:e1}=await sb.from("inventory").update({archived:true}).eq("id",id);
     if(e1)throw new Error("Archive failed: "+e1.message);
-    modalId=null;renderModal();
-    await load();
+    modalId=null;renderModal();await load();
   }catch(ex){console.error("archiveUnit",ex);armArchive=false;renderModal();err(ex.message||String(ex));}
 }
 
@@ -612,6 +712,8 @@ $("#modal").addEventListener("click",e=>{
   else if(act==="main")setMain(b.dataset.pid);
   else if(act==="save")saveAll();
   else if(act==="arch")archiveUnit();
+  else if(act==="useprice"){const el=$("#pRetail");if(el){el.value=b.dataset.p;
+    el.scrollIntoView({block:"center"});}}
 });
 
 $("#list").addEventListener("click",e=>{
