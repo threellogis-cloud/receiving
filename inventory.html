@@ -19,11 +19,11 @@
   .filters{display:flex;gap:8px;margin:10px 0 4px}
   .filters button{flex:1;padding:8px;background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:600}
   .filters button.on{background:var(--amber);color:#141414;border-color:var(--amber)}
-  .modebar{display:flex;gap:8px;margin-bottom:10px}
-  .modebar button{flex:1;padding:8px;background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:700;font-size:14px}
+  .modebar{display:flex;gap:6px;margin-bottom:10px}
+  .modebar button{flex:1;padding:8px 4px;background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:700;font-size:13px}
   .modebar button.on{background:#173417;color:var(--green);border-color:var(--green)}
   .count{color:var(--dim);font-size:14px;margin:6px 2px}
-  .card{display:flex;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+  .card{display:flex;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;align-items:flex-start}
   .ph{position:relative;width:92px;height:92px;flex:none;border-radius:8px;background:#101410;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px;overflow:hidden;cursor:pointer;text-align:center;padding:4px}
   .ph img{width:100%;height:100%;object-fit:cover;display:block}
   .ph .add{color:var(--amber);font-weight:700;font-size:11px;line-height:1.3}
@@ -38,6 +38,8 @@
   .chip.available{background:#173417;color:var(--green)}
   .chip.sold{background:#341717;color:var(--red)}
   .chip.ebay{background:#17342a;color:var(--green);margin-left:6px}
+  .ckbox{width:44px;height:44px;flex:none;padding:0;background:transparent;border:2px solid var(--line);border-radius:10px;color:var(--green);font-size:24px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;align-self:center}
+  .ckbox.on{background:#173417;border-color:var(--green)}
   .muted{color:var(--dim)}
   .err{border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;margin-top:10px;display:none}
   .ok{border:1px solid var(--green);color:var(--green);border-radius:10px;padding:10px;margin-top:10px;display:none}
@@ -98,6 +100,7 @@
     <div class="modebar">
       <button data-m="customer" class="on">Customer</button>
       <button data-m="owner">Owner</button>
+      <button data-m="checked">Checked</button>
       <button data-m="ebay">eBay</button>
     </div>
     <div id="invControls">
@@ -143,7 +146,7 @@
 <input id="labPick" type="file" accept="image/*" style="display:none">
 <div id="modal"><div class="sheet" id="sheet"></div></div>
 <div id="err" class="err"></div>
-<footer>inventory v10</footer>
+<footer>inventory v11</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -189,7 +192,7 @@ async function load(){
   err("");
   const {data,error}=await sb.from("inventory").select(
     "id,sku,inventory_number,title,status,archived,brand,model,condition,category,"+
-    "storage_location,internal_notes,selling_price,ebay_category_id,packaging_cost,ebay_tracked,"+
+    "storage_location,internal_notes,selling_price,ebay_category_id,packaging_cost,ebay_tracked,checked_off,"+
     "nellis_brand,nellis_color,nellis_condition_tags,nellis_estimated_retail,"+
     "nellis_item_length_in,nellis_item_width_in,nellis_item_height_in,"+
     "nellis_item_weight_lb,nellis_package_weight_lb,nellis_sales_rank,"+
@@ -266,6 +269,8 @@ function solvePrice(r){
 <script>
 function visible(){
   return rows.filter(r=>{
+    if(mode==="owner"&&r.checked_off)return false;
+    if(mode==="checked"&&!r.checked_off)return false;
     if(filter!=="all"&&r.status!==filter)return false;
     if(q){const s=((r.title||"")+" "+(r.sku||"")+" "+(r.inventory_number||"")+" "+(r.category||"")).toLowerCase();
       if(!s.includes(q))return false;}
@@ -286,8 +291,11 @@ function render(){
   }
   const v=visible();
   const total=v.reduce((a,r)=>a+(Number(cost(r).landed_cost)||0),0);
-  $("#count").textContent=v.length+" unit"+(v.length===1?"":"s")
-    +(mode==="owner"?" · $"+total.toFixed(2)+" landed":"");
+  const ckTotal=rows.filter(r=>r.checked_off).length;
+  let countTxt=v.length+" unit"+(v.length===1?"":"s");
+  if(mode==="owner")countTxt+=" · $"+total.toFixed(2)+" landed"+(ckTotal?" · "+ckTotal+" checked off":"");
+  if(mode==="checked")countTxt=v.length+" checked";
+  $("#count").textContent=countTxt;
   $("#list").innerHTML=v.map(r=>{
     const c=cost(r),ph=photoCache[r.id],n=photoRows(r).length;
     const bits=[r.brand,r.condition];
@@ -301,7 +309,11 @@ function render(){
     if(busy[r.id])tile+='<span class="busy">uploading…</span>';
     const moneyLine = mode==="owner"
       ? '<div class="money"><b>'+money(c.landed_cost)+'</b> landed <span class="muted">· '+money(c.hammer_cost)+' hammer</span></div>'
+      : mode==="checked" ? ""
       : '<div class="money"><b>'+money(r.selling_price)+'</b></div>';
+    const ck=(mode==="owner"||mode==="checked")
+      ? '<button class="ckbox'+(r.checked_off?' on':'')+'" data-ck="'+esc(r.id)+'" aria-label="check off">'+(r.checked_off?'✓':'')+'</button>'
+      : "";
     return '<div class="card">'
       +'<div class="ph" data-id="'+esc(r.id)+'">'+tile+'</div>'
       +'<div class="info">'
@@ -311,8 +323,18 @@ function render(){
       +(extra?'<div class="sub">'+extra+'</div>':"")
       +'<span class="chip '+esc(r.status)+'">'+esc(r.status)+'</span>'
       +(mode==="owner"&&r.ebay_tracked?'<span class="chip ebay">eBay</span>':"")
-      +'</div></div>';
-  }).join("")||'<div class="panel muted">No units match.</div>';
+      +'</div>'+ck+'</div>';
+  }).join("")||'<div class="panel muted">'
+    +(mode==="checked"?"Nothing checked off yet. Check units in Owner mode as you verify them.":"No units match.")
+    +'</div>';
+}
+async function toggleCheck(id){
+  const r=rows.find(x=>x.id===id);
+  if(!r)return;
+  const nv=!r.checked_off;
+  r.checked_off=nv;render();
+  const {error}=await sb.from("inventory").update({checked_off:nv}).eq("id",id);
+  if(error){r.checked_off=!nv;render();err("Check-off failed: "+error.message);}
 }
 async function hydratePhotos(){
   let changed=false;
@@ -781,6 +803,8 @@ $("#modal").addEventListener("click",e=>{
 });
 
 $("#list").addEventListener("click",e=>{
+  const ck=e.target.closest("[data-ck]");
+  if(ck){toggleCheck(ck.dataset.ck);return;}
   const tile=e.target.closest(".ph");
   if(!tile)return;
   const id=tile.dataset.id;
