@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>7 &amp; Under — eBay Authorization</title>
+<style>
+  body{margin:0;background:#141814;color:#e8ece8;font:16px/1.5 system-ui,Roboto,sans-serif;
+    display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px}
+  .card{background:#1b201b;border:1px solid #2a312a;border-radius:12px;padding:24px;max-width:480px;text-align:center}
+  h1{font-size:20px;margin:0 0 8px}
+  h1 span{color:#f5b82e}
+  .ok{color:#7dc87d;font-weight:700;margin:12px 0}
+  .code{background:#101410;border:1px solid #2a312a;border-radius:8px;padding:12px;
+    font:13px ui-monospace,Menlo,monospace;word-break:break-all;margin:12px 0;text-align:left}
+  .dim{color:#9aa39a;font-size:13px}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>7 &amp; UNDER / <span>EBAY</span></h1>
+  <div id="status" class="ok">Checking authorization…</div>
+  <div id="codebox" class="code" style="display:none"></div>
+  <div class="dim" id="hint"></div>
+</div>
+<script>
+const p=new URLSearchParams(location.search);
+const code=p.get("code");
+const st=document.getElementById("status"),cb=document.getElementById("codebox"),h=document.getElementById("hint");
+if(code){
+  st.textContent="Authorization received.";
+  cb.style.display="block";cb.textContent=code;
+  h.textContent="Copy this code and paste it back into the Circuit chat. It expires in a few minutes, so do it now.";
+}else if(p.get("error")){
+  st.textContent="Authorization declined or failed.";st.style.color="#e07a5f";
+  h.textContent=p.get("error_description")||p.get("error");
+}else{
+  st.textContent="Nothing to see here.";
+  h.textContent="This page only does something at the end of the eBay authorization flow.";
+}
+</script>
+</body>
+</html>
