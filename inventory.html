@@ -102,6 +102,7 @@
       <button data-m="owner">Owner</button>
       <button data-m="checked">Checked</button>
       <button data-m="ebay">eBay</button>
+      <button data-m="exempt">Exempt</button>
     </div>
     <div id="invControls">
       <input id="q" type="search" placeholder="Search title, SKU, inv#, category">
@@ -138,6 +139,25 @@
     </div>
   </div>
 
+  <div id="exemptPanel" style="display:none">
+    <div class="panel">
+      <div class="lbl">EXEMPT FROM AUTOMATION</div>
+      <input id="xmNum" inputmode="numeric" placeholder="Nellis inventory number">
+      <input id="xmNote" placeholder="note (optional)">
+      <div class="row2">
+        <div><button id="xmExempt">Exempt</button></div>
+        <div><button id="xmUnexempt" class="ghost">Un-exempt</button></div>
+      </div>
+      <div id="xmStat" class="lbl" style="margin-top:8px"></div>
+      <div class="lbl" style="margin-top:6px">Exempt items are skipped by automation until un-exempted. Every action is recorded; nothing is deleted.</div>
+    </div>
+    <div class="panel">
+      <div class="lbl">CURRENTLY EXEMPT</div>
+      <div id="xmList"></div>
+      <button id="xmRefresh" class="ghost">Refresh</button>
+    </div>
+  </div>
+
   <div id="list"></div>
   <button id="btnOut" class="ghost">Sign out</button>
 </div>
@@ -146,7 +166,7 @@
 <input id="labPick" type="file" accept="image/*" style="display:none">
 <div id="modal"><div class="sheet" id="sheet"></div></div>
 <div id="err" class="err"></div>
-<footer>inventory v11</footer>
+<footer>inventory v12</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -165,6 +185,7 @@ let rows=[],filter="available",q="",photoCache={},busy={},pendingId=null;
 let mode="customer",modalId=null,modalUrls={},armArchive=false,saveNote="";
 let exRows=[],exOpen=null,exShot=null,exNote="",exArm=false,showArch=false;
 let feeRates=[],pendingEbayUnit=null;
+let exemptRows=[];
 
 function err(m){const e=$("#err");e.textContent=m||"";e.style.display=m?"block":"none";}
 function showAuth(){$("#authPanel").style.display="block";$("#app").style.display="none";}
@@ -278,10 +299,12 @@ function visible(){
   });
 }
 function render(){
-  const isEbay = mode==="ebay";
+  const isEbay = mode==="ebay", isExempt = mode==="exempt";
   $("#ebayPanel").style.display = isEbay ? "block" : "none";
-  $("#invControls").style.display = isEbay ? "none" : "block";
-  $("#list").style.display = isEbay ? "none" : "block";
+  $("#exemptPanel").style.display = isExempt ? "block" : "none";
+  $("#invControls").style.display = (isEbay||isExempt) ? "none" : "block";
+  $("#list").style.display = (isEbay||isExempt) ? "none" : "block";
+  if(isExempt){renderExempt();return;}
   if(isEbay){
     $("#aT").textContent=money(PRICE_TARGET);
     $("#aG").textContent=money(PACKAGING_COST);
@@ -349,6 +372,58 @@ async function hydratePhotos(){
   }
   if(changed)render();
 }
+</script>
+<script>
+/* ---- EXEMPTIONS (v12) ----
+   Append-only: every tap inserts one exemption_events row.
+   Current state is derived by the current_exemptions view.
+   Pre-exempting a number not yet in inventory is allowed by design.
+--------------------------- */
+async function loadExempt(){
+  const {data,error}=await sb.from("current_exemptions")
+    .select("nellis_inventory_number,note,exempted_at")
+    .order("exempted_at",{ascending:false});
+  if(error){err("Exemptions load failed: "+error.message);return;}
+  exemptRows=data||[];renderExempt();
+}
+function renderExempt(){
+  const el=$("#xmList");
+  if(!el)return;
+  if(!exemptRows.length){el.innerHTML='<div class="muted">Nothing exempt.</div>';return;}
+  el.innerHTML=exemptRows.map(x=>{
+    const n=String(x.nellis_inventory_number||"");
+    const unit=rows.find(r=>String(r.inventory_number||"")===n);
+    const when=String(x.exempted_at||"").slice(0,16).replace("T"," ");
+    return '<div class="exrow" data-xm="'+esc(n)+'">'
+      +'<div class="t">INV# '+esc(n)+'</div>'
+      +'<div class="ids">'+(unit?('SKU '+esc(unit.sku)+' · '+esc((unit.title||"").slice(0,40))):'not in inventory yet')+' · '+esc(when)+'</div>'
+      +(x.note?'<div class="sub">'+esc(x.note)+'</div>':'')
+      +'</div>';
+  }).join("");
+}
+async function doExempt(action){
+  err("");
+  const n=($("#xmNum").value||"").trim();
+  if(!/^\d{6,}$/.test(n)){err("Inventory number must be digits only, at least 6.");return;}
+  const note=txt("#xmNote");
+  const {data:{session}}=await sb.auth.getSession();
+  const by=session&&session.user?(session.user.email||session.user.id):null;
+  const {error}=await sb.from("exemption_events")
+    .insert({nellis_inventory_number:n,action:action,note:note,created_by:by});
+  if(error){err((action==="exempt"?"Exempt":"Un-exempt")+" failed: "+error.message);return;}
+  const unit=rows.find(r=>String(r.inventory_number||"")===n);
+  $("#xmStat").textContent=(action==="exempt"?"Exempted ":"Un-exempted ")+n
+    +(unit?"":" (not in inventory yet — that is fine)");
+  $("#xmNum").value="";$("#xmNote").value="";
+  await loadExempt();
+}
+$("#xmExempt").onclick=()=>doExempt("exempt");
+$("#xmUnexempt").onclick=()=>doExempt("unexempt");
+$("#xmRefresh").onclick=loadExempt;
+$("#xmList").addEventListener("click",e=>{
+  const r=e.target.closest("[data-xm]");
+  if(r){$("#xmNum").value=r.dataset.xm;$("#xmNum").scrollIntoView({block:"center"});}
+});
 </script>
 <script>
 function renderTrack(){
@@ -858,6 +933,7 @@ document.querySelectorAll(".modebar button").forEach(b=>{
     b.classList.add("on");mode=b.dataset.m;
     if(mode==="ebay"&&!exRows.length)loadEx(); else render();
     if(mode==="ebay")render();
+    if(mode==="exempt")loadExempt();
     if(modalId)renderModal();};
 });
 boot();
