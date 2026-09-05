@@ -1,1 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>7 &amp; Under</title></head>
+<body style="font-family:sans-serif;padding:24px;background:#111;color:#eee">
+<h2 id="s">Nothing to see here</h2>
+<p id="m"></p>
+<script>
+var c=new URLSearchParams(location.search).get("code");
+var s=document.getElementById("s"),m=document.getElementById("m");
+if(c){
+s.textContent="Sending code...";
+fetch("https://fuebtrlaroowedjxjucn.supabase.co/functions/v1/ebay-oauth",{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},body:JSON.stringify({code:c})})
+.then(function(){s.textContent="Code sent.";m.textContent="Check ebay_tokens.";})
+.catch(function(e){s.textContent="Send failed.";m.textContent=String(e);});
+}
+</script>
+</body>
+</html>
 
