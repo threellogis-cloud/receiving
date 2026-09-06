@@ -166,7 +166,7 @@
 <input id="labPick" type="file" accept="image/*" style="display:none">
 <div id="modal"><div class="sheet" id="sheet"></div></div>
 <div id="err" class="err"></div>
-<footer>inventory v12</footer>
+<footer>inventory v13</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -186,6 +186,7 @@ let mode="customer",modalId=null,modalUrls={},armArchive=false,saveNote="";
 let exRows=[],exOpen=null,exShot=null,exNote="",exArm=false,showArch=false;
 let feeRates=[],pendingEbayUnit=null;
 let exemptRows=[];
+let consMap={},exOverride=false;
 
 function err(m){const e=$("#err");e.textContent=m||"";e.style.display=m?"block":"none";}
 function showAuth(){$("#authPanel").style.display="block";$("#app").style.display="none";}
@@ -457,8 +458,14 @@ async function loadEx(){
     .select("id,inventory_id,inventory_number,storage_path,attempt,status,block_reasons,error_text,payload,archived,created_at")
     .order("created_at",{ascending:false}).limit(100);
   if(error){err("Extractions load failed: "+error.message);return;}
-  exRows=data||[];renderEx();
+  exRows=data||[];
+  const {data:cd,error:ce}=await sb.from("extraction_consensus")
+    .select("storage_path,attempts,numbers,verdict,consensus_number");
+  if(ce){console.error("consensus load",ce);consMap={};}
+  else{consMap={};(cd||[]).forEach(c=>{consMap[c.storage_path]=c;});}
+  renderEx();
 }
+function consOf(x){return consMap[x&&x.storage_path]||null;}
 function exVisible(){return exRows.filter(x=>showArch?true:!x.archived);}
 function renderEx(){
   if(exOpen){renderExDetail();return;}
@@ -476,6 +483,9 @@ function renderEx(){
       +'<div class="ids">INV# '+esc(x.inventory_number||"—")+' · attempt '+x.attempt+' · '+linked
       +(x.archived?' · archived':'')+'</div>'
       +'<span class="st '+esc(x.status)+'">'+esc(x.status)+'</span>'
+      +(function(){const c=consOf(x);if(!c)return "";
+        const cls=c.verdict==="consensus"?"ok":c.verdict==="disagreement"?"blocked":"pending";
+        return ' <span class="st '+cls+'">'+esc(c.verdict)+'</span>';})()
       +'</div>';
   }).join("");
 }
@@ -494,8 +504,24 @@ function renderExDetail(){
   body+=exShot?'<img class="shot" src="'+exShot+'" alt="">':'<div class="muted" style="margin:10px 0">loading screenshot…</div>';
   if(x.status==="blocked")body+='<div class="warn"><b>BLOCKED</b><br>'+esc(JSON.stringify(x.block_reasons))+'</div>';
   if(x.status==="error")body+='<div class="warn"><b>ERROR</b><br>'+esc(x.error_text||"")+'</div>';
-  body+='<div class="warn">Check every field against the screenshot. Extraction has produced '
+  const cons=consOf(x);
+  if(cons&&cons.verdict==="consensus"){
+    body+='<div class="warn" style="border-color:var(--green);color:var(--green)">'
+      +'<b>CONSENSUS</b><br>Two independent extractions both read '
+      +esc(cons.consensus_number)+'. Still check the other fields against the screenshot.</div>';
+  }else if(cons&&cons.verdict==="disagreement"){
+    body+='<div class="warn bad"><b>NO CONSENSUS</b><br>'
+      +'The independent extractions did not agree: '+esc(JSON.stringify(cons.numbers))+'. '
+      +'The system will not choose between them. Read the number off the screenshot yourself, '
+      +'type it below, and tick override to promote.</div>';
+  }else if(cons&&cons.verdict==="single"){
+    body+='<div class="warn"><b>SINGLE EXTRACTION</b><br>'
+      +'Only one attempt exists for this screenshot, so there is nothing to compare against. '
+      +'Re-extract to obtain a second independent reading.</div>';
+  }else{
+    body+='<div class="warn">Check every field against the screenshot. Extraction has produced '
        +'a wrong inventory number before.</div>';
+  }
   const pn=String(p.inventory_number||"");
   if(linked&&pn&&String(linked.inventory_number||"")!==pn){
     body+='<div class="warn bad"><b>NUMBER MISMATCH</b><br>'
@@ -538,7 +564,13 @@ function renderExDetail(){
     +'<div class="lbl">Extracted title (not promoted — copy by hand if wanted)</div>'
     +'<div class="muted" style="font-size:13px;margin-bottom:8px">'+esc(p.title||"—")+'</div>'
     +'</div>';
-  body+='<button data-ex-act="promote">Confirm &amp; promote to unit</button>';
+  const gate=cons&&cons.verdict==="consensus";
+  if(!gate){
+    body+='<label class="toggle"><input type="checkbox" id="xOverride"'+(exOverride?" checked":"")+'> '
+      +'override — I read the number off the screenshot myself</label>';
+  }
+  body+='<button data-ex-act="promote"'+((gate||exOverride)?"":' class="ghost"')+'>'
+    +'Confirm &amp; promote to unit'+((gate||exOverride)?"":" (blocked)")+'</button>';
   if(exNote)body+='<div class="ok" style="display:block">'+esc(exNote)+'</div>';
   body+='<button class="ghost" data-ex-act="rerun" style="margin-top:8px">Re-extract this screenshot</button>';
   body+='<div class="sect"><h3>ARCHIVE</h3>'
@@ -551,7 +583,7 @@ function renderExDetail(){
   $("#exList").innerHTML=body;
 }
 async function openEx(id){
-  exOpen=id;exShot=null;exNote="";exArm=false;renderEx();
+  exOpen=id;exShot=null;exNote="";exArm=false;exOverride=false;renderEx();
   const x=exRows.find(r=>r.id===id);
   if(!x)return;
   const {data}=await sb.storage.from("product-shots").createSignedUrl(x.storage_path,3600);
@@ -579,6 +611,16 @@ async function promoteEx(){
   const unitId=$("#xUnit")?$("#xUnit").value:"";
   if(!invNum){err("Inventory number is required.");return;}
   if(!unitId){err("Pick a unit to link, or this extraction has nothing to promote to.");return;}
+  const cons=consOf(x);
+  const gate=cons&&cons.verdict==="consensus";
+  if(!gate&&!exOverride){
+    err("No consensus on the inventory number. Re-extract, or tick override after reading the number off the screenshot yourself.");
+    return;
+  }
+  if(gate&&cons.consensus_number&&invNum!==String(cons.consensus_number)){
+    err("The number you typed does not match the consensus number "+cons.consensus_number+". Tick override if you are deliberately correcting it.");
+    if(!exOverride)return;
+  }
   const tags=(x.payload||{}).condition_tags;
   const patch={
     nellis_brand:txt("#xBrand"),nellis_color:txt("#xColor"),
@@ -594,7 +636,10 @@ async function promoteEx(){
       .update({inventory_id:unitId,inventory_number:invNum}).eq("id",x.id);
     if(e2)throw new Error("Unit updated but extraction link failed: "+e2.message);
     await load();await loadEx();
-    exNote="Promoted.";renderEx();
+    exNote=(consOf(x)&&consOf(x).verdict==="consensus"&&!exOverride)
+      ?"Promoted on consensus."
+      :"Promoted by override — no machine consensus on the number.";
+    exOverride=false;renderEx();
   }catch(ex){console.error("promoteEx",ex);err(ex.message||String(ex));}
 }
 async function runExtract(path,linkUnitId){
@@ -638,12 +683,15 @@ $("#labPick").onchange=async e=>{
 };
 $("#exRefresh").onclick=loadEx;
 $("#showArch").onchange=e=>{showArch=e.target.checked;exOpen=null;exShot=null;renderEx();};
+$("#exList").addEventListener("change",e=>{
+  if(e.target&&e.target.id==="xOverride"){exOverride=e.target.checked;renderEx();}
+});
 $("#exList").addEventListener("click",e=>{
   const b=e.target.closest("[data-ex-act]");
   if(b){
     const a=b.dataset.exAct;
     if(a!=="arch"&&exArm)exArm=false;
-    if(a==="back"){exOpen=null;exShot=null;exNote="";exArm=false;renderEx();}
+    if(a==="back"){exOpen=null;exShot=null;exNote="";exArm=false;exOverride=false;renderEx();}
     else if(a==="promote")promoteEx();
     else if(a==="rerun"){const x=exRows.find(r=>r.id===exOpen);
       if(x){$("#upStat").textContent="";runExtract(x.storage_path,x.inventory_id||null);}}
