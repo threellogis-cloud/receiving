@@ -166,7 +166,7 @@
 <input id="labPick" type="file" accept="image/*" style="display:none">
 <div id="modal"><div class="sheet" id="sheet"></div></div>
 <div id="err" class="err"></div>
-<footer>inventory v14</footer>
+<footer>inventory v15</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -184,6 +184,7 @@ const $=s=>document.querySelector(s);
 let rows=[],filter="available",q="",photoCache={},busy={},pendingId=null;
 let mode="customer",modalId=null,modalUrls={},armArchive=false,saveNote="";
 let exRows=[],exOpen=null,exShot=null,exNote="",exArm=false,showArch=false;
+let exUnitSel=null;   // E4 (dispatch 107-REM-C): sticky dropdown selection, survives rebuilds
 let feeRates=[],pendingEbayUnit=null;
 let exemptRows=[];
 let consMap={},exOverride=false;
@@ -495,7 +496,7 @@ function tagList(t){
 }
 function renderExDetail(){
   const x=exRows.find(r=>r.id===exOpen);
-  if(!x){exOpen=null;renderEx();return;}
+  if(!x){exOpen=null;exUnitSel=null;renderEx();return;}
   const p=x.payload||{};
   const linked=x.inventory_id?rows.find(r=>r.id===x.inventory_id):null;
   const match=linked||rows.find(r=>r.inventory_number===String(p.inventory_number||""));
@@ -536,8 +537,8 @@ function renderExDetail(){
          match?('Matches SKU '+esc(match.sku)+' — '+esc(match.title||"")):
          'No matching unit. Pick one below or leave unlinked.')
        +'</div>';
-  const opts=['<option value="">— no unit —</option>'].concat(rows.map(r=>
-    '<option value="'+esc(r.id)+'"'+(match&&match.id===r.id?" selected":"")+'>'
+  const opts=['<option value=""'+(String(exUnitSel||"")===""?" selected":"")+'>— no unit —</option>'].concat(rows.map(r=>
+    '<option value="'+esc(r.id)+'"'+(String(exUnitSel||"")===String(r.id)?" selected":"")+'>'
     +esc(r.sku)+' · '+esc((r.title||"").slice(0,40))+'</option>')).join("");
   body+='<div class="lbl">Link to unit</div><select id="xUnit">'+opts+'</select>';
   body+='<div class="sect"><h3>NELLIS FACTS</h3>'
@@ -583,8 +584,17 @@ function renderExDetail(){
   $("#exList").innerHTML=body;
 }
 async function openEx(id){
-  exOpen=id;exShot=null;exNote="";exArm=false;exOverride=false;renderEx();
+  exOpen=id;exShot=null;exNote="";exArm=false;exOverride=false;
   const x=exRows.find(r=>r.id===id);
+  // E4: initialize the dropdown selection ONCE per open (existing link,
+  // else the exact inventory-number match, else none). Every later
+  // rebuild restores from exUnitSel, never re-derives from match.
+  if(x){const p=x.payload||{};
+    exUnitSel=x.inventory_id
+      ||((rows.find(r=>String(r.inventory_number||"")===String(p.inventory_number||"")))||{}).id
+      ||"";}
+  else{exUnitSel="";}
+  renderEx();
   if(!x)return;
   const {data}=await sb.storage.from("product-shots").createSignedUrl(x.storage_path,3600);
   exShot=(data&&data.signedUrl)||null;
@@ -599,7 +609,7 @@ async function setArchived(flag){
     if(e1)throw new Error("Archive failed: "+e1.message);
     exArm=false;
     await loadEx();
-    if(flag){exOpen=null;exShot=null;}
+    if(flag){exOpen=null;exShot=null;exUnitSel=null;}
     renderEx();
   }catch(ex){console.error("setArchived",ex);exArm=false;renderEx();err(ex.message||String(ex));}
 }
@@ -608,7 +618,7 @@ async function promoteEx(){
   if(!x)return;
   err("");
   const invNum=txt("#xInv");
-  const unitId=$("#xUnit")?$("#xUnit").value:"";
+  const unitId=exUnitSel||"";   // E4: from sticky state, not the DOM
   if(!invNum){err("Inventory number is required.");return;}
   if(!unitId){err("Pick a unit to link, or this extraction has nothing to promote to.");return;}
   // Option C (dispatch 107): a typed/extracted number that does not match
@@ -718,8 +728,9 @@ $("#labPick").onchange=async e=>{
   }catch(ex){console.error("labUpload",ex);$("#upStat").textContent="ERROR: "+(ex.message||ex);}
 };
 $("#exRefresh").onclick=loadEx;
-$("#showArch").onchange=e=>{showArch=e.target.checked;exOpen=null;exShot=null;renderEx();};
+$("#showArch").onchange=e=>{showArch=e.target.checked;exOpen=null;exShot=null;exUnitSel=null;renderEx();};
 $("#exList").addEventListener("change",e=>{
+  if(e.target&&e.target.id==="xUnit"){exUnitSel=e.target.value;return;}  // E4: persist, no rebuild
   if(e.target&&e.target.id==="xOverride"){exOverride=e.target.checked;renderEx();}
 });
 $("#exList").addEventListener("click",e=>{
@@ -727,7 +738,7 @@ $("#exList").addEventListener("click",e=>{
   if(b){
     const a=b.dataset.exAct;
     if(a!=="arch"&&exArm)exArm=false;
-    if(a==="back"){exOpen=null;exShot=null;exNote="";exArm=false;exOverride=false;renderEx();}
+    if(a==="back"){exOpen=null;exShot=null;exNote="";exArm=false;exOverride=false;exUnitSel=null;renderEx();}
     else if(a==="promote")promoteEx();
     else if(a==="rerun"){const x=exRows.find(r=>r.id===exOpen);
       if(x){$("#upStat").textContent="";runExtract(x.storage_path,null);}}
