@@ -166,7 +166,7 @@
 <input id="labPick" type="file" accept="image/*" style="display:none">
 <div id="modal"><div class="sheet" id="sheet"></div></div>
 <div id="err" class="err"></div>
-<footer>inventory v13</footer>
+<footer>inventory v14</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -611,6 +611,15 @@ async function promoteEx(){
   const unitId=$("#xUnit")?$("#xUnit").value:"";
   if(!invNum){err("Inventory number is required.");return;}
   if(!unitId){err("Pick a unit to link, or this extraction has nothing to promote to.");return;}
+  // Option C (dispatch 107): a typed/extracted number that does not match
+  // the SELECTED unit's inventory_number hard-blocks the link unless the
+  // override checkbox is explicitly ticked.
+  const selUnit=rows.find(r=>r.id===unitId);
+  const selNum=selUnit?String(selUnit.inventory_number||""):null;
+  if(!exOverride&&selNum!==invNum){
+    err("Number mismatch: extraction/typed "+invNum+" vs unit "+(selUnit?(selUnit.inventory_number||"?"):"(unit not loaded)")+". Tick override to link anyway.");
+    return;
+  }
   const cons=consOf(x);
   const gate=cons&&cons.verdict==="consensus";
   if(!gate&&!exOverride){
@@ -655,14 +664,41 @@ async function runExtract(path,linkUnitId){
     });
     const out=await res.json().catch(()=>({error:"bad response"}));
     if(!res.ok)throw new Error(out.error||("http "+res.status));
+    let linkedNote="";
     if(linkUnitId){
-      const {error:lnErr}=await sb.from("product_extractions")
-        .update({inventory_id:linkUnitId}).eq("storage_path",path);
-      if(lnErr){console.error("link failed",lnErr);
-        $("#upStat").textContent="done (status "+out.status+") but linking failed: "+lnErr.message;
-        exOpen=null;exShot=null;await loadEx();return;}
+      // Option C (dispatch 107): link ONLY when the extracted inventory
+      // number equals the target unit's, and update the NEW attempt row
+      // BY ROW ID (never by storage_path, which would relink siblings).
+      // the NEW attempt row: id AND number read from the SAME row so
+      // the equality check and the update target can never diverge
+      // (QA-20260907-040323 f1). No reliance on the function response id.
+      const {data:latest}=await sb.from("product_extractions")
+        .select("id,inventory_number").eq("storage_path",path)
+        .order("attempt",{ascending:false}).limit(1);
+      const nr=(latest&&latest[0])||null;
+      const newRowId=nr?nr.id:null;
+      const extracted=nr?nr.inventory_number:null;
+      // target unit number by FRESH select, not the cached rows[]
+      const {data:unit}=await sb.from("inventory")
+        .select("inventory_number").eq("id",linkUnitId).limit(1);
+      const unitNum=(unit&&unit[0])?unit[0].inventory_number:null;
+      const ex=(extracted==null)?"":String(extracted);
+      const un=(unitNum==null)?"":String(unitNum);
+      if(newRowId&&ex!==""&&un!==""&&ex===un){
+        const {error:lnErr}=await sb.from("product_extractions")
+          .update({inventory_id:linkUnitId}).eq("id",newRowId);
+        if(lnErr){console.error("link failed",lnErr);
+          $("#upStat").textContent="done (status "+out.status+") but linking failed: "+lnErr.message;
+          exOpen=null;exShot=null;await loadEx();return;}
+        linkedNote=" · linked to unit";
+      }else{
+        $("#upStat").textContent=(ex==="")
+          ?"done — status: "+out.status+" · NOT linked: no number read"
+          :"done — status: "+out.status+" · NOT linked: extraction read "+ex+", unit is "+(un===""?"?":un);
+        exOpen=null;exShot=null;await loadEx();return;
+      }
     }
-    $("#upStat").textContent="done — status: "+out.status+(linkUnitId?" · linked to unit":"");
+    $("#upStat").textContent="done — status: "+out.status+linkedNote;
     exOpen=null;exShot=null;
     await loadEx();
   }catch(ex){console.error("runExtract",ex);$("#upStat").textContent="ERROR: "+(ex.message||ex);}
@@ -694,7 +730,7 @@ $("#exList").addEventListener("click",e=>{
     if(a==="back"){exOpen=null;exShot=null;exNote="";exArm=false;exOverride=false;renderEx();}
     else if(a==="promote")promoteEx();
     else if(a==="rerun"){const x=exRows.find(r=>r.id===exOpen);
-      if(x){$("#upStat").textContent="";runExtract(x.storage_path,x.inventory_id||null);}}
+      if(x){$("#upStat").textContent="";runExtract(x.storage_path,null);}}
     else if(a==="arch"){if(!exArm){exArm=true;renderEx();}else setArchived(true);}
     else if(a==="unarch")setArchived(false);
     return;
