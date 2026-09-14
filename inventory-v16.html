@@ -1,0 +1,1039 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>7 &amp; Under — Inventory</title>
+<style>
+  :root{--bg:#141814;--card:#1b201b;--line:#2a312a;--txt:#e8ece8;--dim:#9aa39a;--amber:#f5b82e;--green:#7dc87d;--red:#e07a5f;--mono:ui-monospace,Menlo,Consolas,monospace}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:16px/1.45 system-ui,Roboto,sans-serif;padding:16px 16px 60px}
+  h1{font-size:20px;margin:0 0 12px}
+  h1 span{color:var(--amber)}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  input,button,select,textarea{font:inherit}
+  input,select,textarea{width:100%;background:#101410;border:1px solid var(--line);border-radius:8px;color:var(--txt);padding:10px 12px;margin-bottom:8px}
+  textarea{min-height:70px;resize:vertical}
+  button{background:var(--amber);color:#141414;font-weight:700;border:0;border-radius:8px;padding:12px;width:100%;cursor:pointer}
+  button.ghost{background:transparent;color:var(--txt);border:1px solid var(--line)}
+  .filters{display:flex;gap:8px;margin:10px 0 4px}
+  .filters button{flex:1;padding:8px;background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:600}
+  .filters button.on{background:var(--amber);color:#141414;border-color:var(--amber)}
+  .modebar{display:flex;gap:6px;margin-bottom:10px}
+  .modebar button{flex:1;padding:8px 4px;background:transparent;color:var(--dim);border:1px solid var(--line);font-weight:700;font-size:13px}
+  .modebar button.on{background:#173417;color:var(--green);border-color:var(--green)}
+  .count{color:var(--dim);font-size:14px;margin:6px 2px}
+  .card{display:flex;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;align-items:flex-start}
+  .ph{position:relative;width:92px;height:92px;flex:none;border-radius:8px;background:#101410;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:11px;overflow:hidden;cursor:pointer;text-align:center;padding:4px}
+  .ph img{width:100%;height:100%;object-fit:cover;display:block}
+  .ph .add{color:var(--amber);font-weight:700;font-size:11px;line-height:1.3}
+  .ph .badge{position:absolute;right:3px;bottom:3px;background:rgba(0,0,0,.72);color:#fff;font:700 10px var(--mono);padding:1px 5px;border-radius:999px}
+  .ph .busy{position:absolute;inset:0;background:rgba(0,0,0,.72);color:var(--amber);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+  .info{min-width:0;flex:1}
+  .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ids{font-family:var(--mono);font-size:12px;color:var(--dim);margin:2px 0 6px}
+  .money b{color:var(--amber);font-size:17px}
+  .sub{font-size:13px;color:var(--dim);margin-top:2px}
+  .chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin-top:6px}
+  .chip.available{background:#173417;color:var(--green)}
+  .chip.sold{background:#341717;color:var(--red)}
+  .chip.ebay{background:#17342a;color:var(--green);margin-left:6px}
+  .ckbox{width:44px;height:44px;flex:none;padding:0;background:transparent;border:2px solid var(--line);border-radius:10px;color:var(--green);font-size:24px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;align-self:center}
+  .ckbox.on{background:#173417;border-color:var(--green)}
+  .muted{color:var(--dim)}
+  .err{border:1px solid var(--red);color:var(--red);border-radius:10px;padding:10px;margin-top:10px;display:none}
+  .ok{border:1px solid var(--green);color:var(--green);border-radius:10px;padding:10px;margin-top:10px;display:none}
+  footer{position:fixed;left:0;right:0;bottom:0;text-align:center;color:var(--dim);font:12px var(--mono);padding:8px;background:linear-gradient(transparent,var(--bg) 40%)}
+  #modal{position:fixed;inset:0;background:rgba(0,0,0,.86);display:none;overflow-y:auto;padding:16px;z-index:50}
+  #modal.on{display:block}
+  .sheet{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;max-width:640px;margin:0 auto 40px}
+  .sheet h2{font-size:16px;margin:0 0 4px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:12px 0}
+  .cellwrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#101410}
+  .cellwrap img{width:100%;display:block;aspect-ratio:1/1;object-fit:cover}
+  .cellwrap .pad{padding:8px}
+  .cellwrap .pad button{margin-top:6px;padding:8px;font-size:13px}
+  .cellwrap button.del{background:transparent;color:var(--red);border:1px solid var(--red)}
+  .cellwrap button.main{background:transparent;color:var(--amber);border:1px solid var(--amber)}
+  .isprim{font:700 11px var(--mono);color:var(--green);display:block;text-align:center;padding:6px 0}
+  .row2{display:flex;gap:8px}
+  .row2 > div{flex:1}
+  .row3{display:flex;gap:6px}
+  .row3 > div{flex:1}
+  .lbl{font-size:12px;color:var(--dim);margin-bottom:2px}
+  .sect{border-top:1px solid var(--line);margin-top:16px;padding-top:14px}
+  .sect h3{font-size:13px;color:var(--dim);margin:0 0 10px;font-weight:700;letter-spacing:.04em}
+  .costs{background:#101410;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:14px}
+  .costs div{display:flex;justify-content:space-between;padding:3px 0}
+  .costs .frozen{color:var(--dim);font:11px var(--mono);text-align:center;padding-top:8px}
+  button.danger{background:transparent;color:var(--red);border:1px solid var(--red)}
+  button.armed{background:var(--red);color:#141414;border:1px solid var(--red)}
+  pre{background:#101410;border:1px solid var(--line);border-radius:8px;padding:10px;font:12px/1.4 var(--mono);white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;margin:8px 0 0}
+  .exrow{border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer}
+  .exrow.arch{opacity:.55}
+  .exrow .st{font:700 11px var(--mono);padding:1px 7px;border-radius:999px;display:inline-block}
+  .st.ok{background:#173417;color:var(--green)}
+  .st.blocked{background:#341717;color:var(--red)}
+  .st.error{background:#341717;color:var(--red)}
+  .st.pending{background:#333;color:var(--dim)}
+  .shot{width:100%;border:1px solid var(--line);border-radius:8px;display:block;margin-bottom:10px}
+  .warn{border:1px solid var(--amber);color:var(--amber);border-radius:8px;padding:8px;font-size:13px;margin-bottom:10px}
+  .warn.bad{border-color:var(--red);color:var(--red)}
+  .tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}
+  .tags span{background:#101410;border:1px solid var(--line);border-radius:999px;padding:2px 9px;font-size:12px}
+  .toggle{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;color:var(--dim)}
+  .toggle input{width:auto;margin:0}
+  .bigprice{font-size:26px;font-weight:800;color:var(--amber);text-align:center;padding:6px 0}
+</style>
+</head>
+<body>
+<h1>7 &amp; UNDER / <span>INVENTORY</span></h1>
+
+<div id="authPanel" class="panel">
+  <input id="email" type="email" placeholder="email" autocomplete="username">
+  <input id="pass" type="password" placeholder="password" autocomplete="current-password">
+  <button id="btnIn">Sign in</button>
+</div>
+
+<div id="app" style="display:none">
+  <div class="panel">
+    <div class="modebar">
+      <button data-m="customer" class="on">Customer</button>
+      <button data-m="owner">Owner</button>
+      <button data-m="checked">Checked</button>
+      <button data-m="ebay">eBay</button>
+      <button data-m="exempt">Exempt</button>
+    </div>
+    <div id="invControls">
+      <input id="q" type="search" placeholder="Search title, SKU, inv#, category">
+      <div class="filters">
+        <button data-f="available" class="on">Available</button>
+        <button data-f="sold">Sold</button>
+        <button data-f="all">All</button>
+      </div>
+      <div class="count" id="count"></div>
+    </div>
+  </div>
+
+  <div id="ebayPanel" style="display:none">
+    <div class="panel">
+      <div class="lbl">EBAY TRACK</div>
+      <div id="trackList"></div>
+      <div id="upStat" class="lbl" style="margin-top:8px"></div>
+    </div>
+    <div class="panel">
+      <div class="lbl">PRICING ASSUMPTIONS</div>
+      <div class="costs">
+        <div><span>Target profit</span><span id="aT"></span></div>
+        <div><span>Packaging per item</span><span id="aG"></span></div>
+        <div><span>Assumed shipping</span><span id="aS"></span></div>
+        <div><span>Assumed sales tax</span><span id="aTax"></span></div>
+        <div class="frozen">target, not guarantee · reconcile against actual sales</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="lbl">EXTRACTIONS</div>
+      <label class="toggle"><input type="checkbox" id="showArch"> show archived</label>
+      <div id="exList"></div>
+      <button id="exRefresh" class="ghost">Refresh</button>
+    </div>
+  </div>
+
+  <div id="exemptPanel" style="display:none">
+    <div class="panel">
+      <div class="lbl">EXEMPT FROM AUTOMATION</div>
+      <input id="xmNum" inputmode="numeric" placeholder="Nellis inventory number">
+      <input id="xmNote" placeholder="note (optional)">
+      <div class="row2">
+        <div><button id="xmExempt">Exempt</button></div>
+        <div><button id="xmUnexempt" class="ghost">Un-exempt</button></div>
+      </div>
+      <div id="xmStat" class="lbl" style="margin-top:8px"></div>
+      <div class="lbl" style="margin-top:6px">Exempt items are skipped by automation until un-exempted. Every action is recorded; nothing is deleted.</div>
+    </div>
+    <div class="panel">
+      <div class="lbl">CURRENTLY EXEMPT</div>
+      <div id="xmList"></div>
+      <button id="xmRefresh" class="ghost">Refresh</button>
+    </div>
+  </div>
+
+  <div id="list"></div>
+  <button id="btnOut" class="ghost">Sign out</button>
+</div>
+
+<input id="filePick" type="file" accept="image/*" multiple style="display:none">
+<input id="labPick" type="file" accept="image/*" style="display:none">
+<div id="modal"><div class="sheet" id="sheet"></div></div>
+<div id="err" class="err"></div>
+<footer>inventory v16</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ---- PRICING ASSUMPTIONS — Roc-ruled, change here ---- */
+const PRICE_TARGET   = 10.00;  /* Roc ruling: approximate target, not guarantee */
+const PACKAGING_COST = 1.50;   /* Roc, 2026-08-31 */
+const ASSUMED_SHIP   = 10.00;  /* Roc: "$8 to 12 ballpark" — midpoint */
+const ASSUMED_TAX    = 0.07;   /* Roc confirmed 7% */
+/* ------------------------------------------------------ */
+
+const SB_URL="https://fuebtrlaroowedjxjucn.supabase.co";
+const SB_KEY="sb_publishable_-CrujyffVlSXhnst670YEA_-0aRK4Ti";
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+const $=s=>document.querySelector(s);
+let rows=[],filter="available",q="",photoCache={},busy={},pendingId=null;
+let mode="customer",modalId=null,modalUrls={},armArchive=false,saveNote="";
+let exRows=[],exOpen=null,exShot=null,exNote="",exArm=false,showArch=false;
+let exUnitSel=null;   // E4 (dispatch 107-REM-C): sticky dropdown selection, survives rebuilds
+let feeRates=[],pendingEbayUnit=null;
+let exemptRows=[];
+let consMap={},exOverride=false;
+
+function err(m){const e=$("#err");e.textContent=m||"";e.style.display=m?"block":"none";}
+function showAuth(){$("#authPanel").style.display="block";$("#app").style.display="none";}
+async function enter(){$("#authPanel").style.display="none";$("#app").style.display="block";
+  await loadFees();await load();}
+async function boot(){const {data:{session}}=await sb.auth.getSession();session?enter():showAuth();}
+
+$("#btnIn").onclick=async()=>{
+  err("");
+  const {error}=await sb.auth.signInWithPassword({email:$("#email").value.trim(),password:$("#pass").value});
+  error?err(error.message):enter();
+};
+$("#btnOut").onclick=async()=>{await sb.auth.signOut();location.reload();};
+
+async function loadFees(){
+  const {data,error}=await sb.from("ebay_fee_rates")
+    .select("id,category_id,category_label,fee_rate,per_order_low,per_order_high,per_order_threshold,effective_from,effective_to,is_default")
+    .order("is_default",{ascending:false});
+  if(error){console.error("loadFees",error);feeRates=[];return;}
+  const today=new Date().toISOString().slice(0,10);
+  feeRates=(data||[]).filter(r=>
+    (!r.effective_from||r.effective_from<=today)&&(!r.effective_to||r.effective_to>=today));
+}
+async function load(){
+  err("");
+  const {data,error}=await sb.from("inventory").select(
+    "id,sku,inventory_number,title,status,archived,brand,model,condition,category,"+
+    "storage_location,internal_notes,selling_price,ebay_category_id,packaging_cost,ebay_tracked,checked_off,"+
+    "nellis_brand,nellis_color,nellis_condition_tags,nellis_estimated_retail,"+
+    "nellis_item_length_in,nellis_item_width_in,nellis_item_height_in,"+
+    "nellis_item_weight_lb,nellis_package_weight_lb,nellis_sales_rank,"+
+    "inventory_costs(hammer_cost,buyer_premium_cost,tax_cost,landed_cost,wholesale_price,nellis_retail),"+
+    "inventory_photos(id,storage_path,source_url,sort_order,is_primary,created_at)"
+  ).eq("archived",false).order("created_at",{ascending:false});
+  if(error){err("Load failed: "+error.message);return;}
+  rows=data||[];photoCache={};modalUrls={};render();hydratePhotos();
+}
+function cost(r){const c=Array.isArray(r.inventory_costs)?r.inventory_costs[0]:r.inventory_costs;return c||{};}
+function photoRows(r){
+  let p=r.inventory_photos;
+  if(!p)return [];
+  if(!Array.isArray(p))p=[p];
+  return p.slice().sort((a,b)=>
+    ((b.is_primary?1:0)-(a.is_primary?1:0))
+    ||((a.sort_order==null?0:a.sort_order)-(b.sort_order==null?0:b.sort_order))
+    ||String(a.created_at||"").localeCompare(String(b.created_at||"")));
+}
+function pathOf(p){return String(p.storage_path||p.source_url||"").replace(/^photos-internal\//,"");}
+function money(v){return v==null?"—":"$"+Number(v).toFixed(2);}
+function esc(s){return s==null?"":String(s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));}
+function val(v){return v==null?"":esc(v);}
+function num(sel){const e=$(sel);if(!e)return null;const v=e.value.trim();if(v==="")return null;
+  const n=Number(v);return isFinite(n)?n:null;}
+function txt(sel){const e=$(sel);if(!e)return null;const v=e.value.trim();return v===""?null:v;}
+</script>
+<script>
+/* ---- PRICING SOLVER ----
+   P = [ T + L + G + X + k + f*S*(1+t) ] / [ 1 - f*(1+t) ]
+   Fee base includes item price + buyer-paid shipping + sales tax.
+   Per-order fee branches on order total vs threshold.
+------------------------- */
+function rateFor(r){
+  const cid=r.ebay_category_id;
+  if(cid){
+    const hit=feeRates.find(x=>x.category_id&&String(x.category_id)===String(cid));
+    if(hit)return {row:hit,provisional:false,reason:null};
+  }
+  const def=feeRates.find(x=>x.is_default);
+  if(!def)return {row:null,provisional:true,reason:"No fee rates loaded."};
+  return {row:def,provisional:true,
+    reason:cid?"No maintained rate for this category — default used.":"No eBay category set — default used."};
+}
+function solvePrice(r){
+  const c=cost(r);
+  const L=c.landed_cost==null?null:Number(c.landed_cost);
+  if(L==null)return {ok:false,why:"No landed cost on this unit."};
+  const fr=rateFor(r);
+  if(!fr.row)return {ok:false,why:fr.reason};
+  const f=Number(fr.row.fee_rate);
+  const G=r.packaging_cost==null?PACKAGING_COST:Number(r.packaging_cost);
+  const S=ASSUMED_SHIP, t=ASSUMED_TAX, T=PRICE_TARGET, X=0;
+  const denom=1-f*(1+t);
+  if(denom<=0)return {ok:false,why:"Fee rate too high to solve."};
+  const lo=Number(fr.row.per_order_low), hi=Number(fr.row.per_order_high);
+  const thr=Number(fr.row.per_order_threshold);
+  let k=hi,P=0;
+  for(let i=0;i<3;i++){
+    P=(T+L+G+X+k+f*S*(1+t))/denom;
+    const orderTotal=P+S;
+    const k2=orderTotal<=thr?lo:hi;
+    if(k2===k)break;
+    k=k2;
+  }
+  const tax=t*(P+S);
+  const feeBase=P+S+tax;
+  const fvf=f*feeBase;
+  const net=P-fvf-k-L-G-X;
+  return {ok:true,price:P,L:L,G:G,S:S,t:t,f:f,k:k,tax:tax,feeBase:feeBase,fvf:fvf,net:net,
+    label:fr.row.category_label,provisional:fr.provisional,reason:fr.reason};
+}
+</script>
+<script>
+function visible(){
+  return rows.filter(r=>{
+    if(mode==="owner"&&r.checked_off)return false;
+    if(mode==="checked"&&!r.checked_off)return false;
+    if(filter!=="all"&&r.status!==filter)return false;
+    if(q){const s=((r.title||"")+" "+(r.sku||"")+" "+(r.inventory_number||"")+" "+(r.category||"")).toLowerCase();
+      if(!s.includes(q))return false;}
+    return true;
+  });
+}
+function render(){
+  const isEbay = mode==="ebay", isExempt = mode==="exempt";
+  $("#ebayPanel").style.display = isEbay ? "block" : "none";
+  $("#exemptPanel").style.display = isExempt ? "block" : "none";
+  $("#invControls").style.display = (isEbay||isExempt) ? "none" : "block";
+  $("#list").style.display = (isEbay||isExempt) ? "none" : "block";
+  if(isExempt){renderExempt();return;}
+  if(isEbay){
+    $("#aT").textContent=money(PRICE_TARGET);
+    $("#aG").textContent=money(PACKAGING_COST);
+    $("#aS").textContent=money(ASSUMED_SHIP);
+    $("#aTax").textContent=(ASSUMED_TAX*100).toFixed(1)+"%";
+    renderTrack();renderEx();return;
+  }
+  const v=visible();
+  const total=v.reduce((a,r)=>a+(Number(cost(r).landed_cost)||0),0);
+  const ckTotal=rows.filter(r=>r.checked_off).length;
+  let countTxt=v.length+" unit"+(v.length===1?"":"s");
+  if(mode==="owner")countTxt+=" · $"+total.toFixed(2)+" landed"+(ckTotal?" · "+ckTotal+" checked off":"");
+  if(mode==="checked")countTxt=v.length+" checked";
+  $("#count").textContent=countTxt;
+  $("#list").innerHTML=v.map(r=>{
+    const c=cost(r),ph=photoCache[r.id],n=photoRows(r).length;
+    const bits=[r.brand,r.condition];
+    if(mode==="owner")bits.push(r.storage_location);
+    const extra=bits.filter(Boolean).map(esc).join(" · ");
+    let tile="";
+    if(ph)tile='<img src="'+ph+'" alt="">';
+    else if(n>0)tile='<span class="muted">loading…</span>';
+    else tile='<span class="add">+ add<br>photo</span>';
+    if(n>1)tile+='<span class="badge">'+n+'</span>';
+    if(busy[r.id])tile+='<span class="busy">uploading…</span>';
+    const moneyLine = mode==="owner"
+      ? '<div class="money"><b>'+money(c.landed_cost)+'</b> landed <span class="muted">· '+money(c.hammer_cost)+' hammer</span></div>'
+      : mode==="checked" ? ""
+      : '<div class="money"><b>'+money(r.selling_price)+'</b></div>';
+    const ck=(mode==="owner"||mode==="checked")
+      ? '<button class="ckbox'+(r.checked_off?' on':'')+'" data-ck="'+esc(r.id)+'" aria-label="check off">'+(r.checked_off?'✓':'')+'</button>'
+      : "";
+    return '<div class="card">'
+      +'<div class="ph" data-id="'+esc(r.id)+'">'+tile+'</div>'
+      +'<div class="info">'
+      +'<div class="t">'+(esc(r.title)||'<span class="muted">untitled</span>')+'</div>'
+      +'<div class="ids">SKU '+esc(r.sku)+' · INV# '+esc(r.inventory_number)+'</div>'
+      +moneyLine
+      +(extra?'<div class="sub">'+extra+'</div>':"")
+      +'<span class="chip '+esc(r.status)+'">'+esc(r.status)+'</span>'
+      +(mode==="owner"&&r.ebay_tracked?'<span class="chip ebay">eBay</span>':"")
+      +'</div>'+ck+'</div>';
+  }).join("")||'<div class="panel muted">'
+    +(mode==="checked"?"Nothing checked off yet. Check units in Owner mode as you verify them.":"No units match.")
+    +'</div>';
+}
+async function toggleCheck(id){
+  const r=rows.find(x=>x.id===id);
+  if(!r)return;
+  const nv=!r.checked_off;
+  r.checked_off=nv;render();
+  const {error}=await sb.from("inventory").update({checked_off:nv}).eq("id",id);
+  if(error){r.checked_off=!nv;render();err("Check-off failed: "+error.message);}
+}
+async function hydratePhotos(){
+  let changed=false;
+  for(const r of rows){
+    if(photoCache[r.id]!==undefined)continue;
+    const list=photoRows(r);
+    if(!list.length){photoCache[r.id]=null;continue;}
+    const path=pathOf(list[0]);
+    if(!path){photoCache[r.id]=null;continue;}
+    const {data}=await sb.storage.from("photos-internal").createSignedUrl(path,3600);
+    photoCache[r.id]=(data&&data.signedUrl)||null;changed=true;
+  }
+  if(changed)render();
+}
+</script>
+<script>
+/* ---- EXEMPTIONS (v12) ----
+   Append-only: every tap inserts one exemption_events row.
+   Current state is derived by the current_exemptions view.
+   Pre-exempting a number not yet in inventory is allowed by design.
+--------------------------- */
+async function loadExempt(){
+  const {data,error}=await sb.from("current_exemptions")
+    .select("nellis_inventory_number,note,exempted_at")
+    .order("exempted_at",{ascending:false});
+  if(error){err("Exemptions load failed: "+error.message);return;}
+  exemptRows=data||[];renderExempt();
+}
+function renderExempt(){
+  const el=$("#xmList");
+  if(!el)return;
+  if(!exemptRows.length){el.innerHTML='<div class="muted">Nothing exempt.</div>';return;}
+  el.innerHTML=exemptRows.map(x=>{
+    const n=String(x.nellis_inventory_number||"");
+    const unit=rows.find(r=>String(r.inventory_number||"")===n);
+    const when=String(x.exempted_at||"").slice(0,16).replace("T"," ");
+    return '<div class="exrow" data-xm="'+esc(n)+'">'
+      +'<div class="t">INV# '+esc(n)+'</div>'
+      +'<div class="ids">'+(unit?('SKU '+esc(unit.sku)+' · '+esc((unit.title||"").slice(0,40))):'not in inventory yet')+' · '+esc(when)+'</div>'
+      +(x.note?'<div class="sub">'+esc(x.note)+'</div>':'')
+      +'</div>';
+  }).join("");
+}
+async function doExempt(action){
+  err("");
+  const n=($("#xmNum").value||"").trim();
+  if(!/^\d{6,}$/.test(n)){err("Inventory number must be digits only, at least 6.");return;}
+  const note=txt("#xmNote");
+  const {data:{session}}=await sb.auth.getSession();
+  const by=session&&session.user?(session.user.email||session.user.id):null;
+  const {error}=await sb.from("exemption_events")
+    .insert({nellis_inventory_number:n,action:action,note:note,created_by:by});
+  if(error){err((action==="exempt"?"Exempt":"Un-exempt")+" failed: "+error.message);return;}
+  const unit=rows.find(r=>String(r.inventory_number||"")===n);
+  $("#xmStat").textContent=(action==="exempt"?"Exempted ":"Un-exempted ")+n
+    +(unit?"":" (not in inventory yet — that is fine)");
+  $("#xmNum").value="";$("#xmNote").value="";
+  await loadExempt();
+}
+$("#xmExempt").onclick=()=>doExempt("exempt");
+$("#xmUnexempt").onclick=()=>doExempt("unexempt");
+$("#xmRefresh").onclick=loadExempt;
+$("#xmList").addEventListener("click",e=>{
+  const r=e.target.closest("[data-xm]");
+  if(r){$("#xmNum").value=r.dataset.xm;$("#xmNum").scrollIntoView({block:"center"});}
+});
+</script>
+<script>
+function renderTrack(){
+  const el=$("#trackList");
+  if(!el)return;
+  const t=rows.filter(r=>r.ebay_tracked);
+  if(!t.length){el.innerHTML='<div class="muted">No units in eBay track. Open a unit in Owner mode and tap "Push to eBay track".</div>';return;}
+  el.innerHTML=t.map(r=>{
+    const c=cost(r),ph=photoCache[r.id];
+    const tile=ph?'<img src="'+ph+'" alt="">':'<span class="muted">no photo</span>';
+    return '<div class="card">'
+      +'<div class="ph" data-tid="'+esc(r.id)+'">'+tile+'</div>'
+      +'<div class="info">'
+      +'<div class="t">'+(esc(r.title)||'<span class="muted">untitled</span>')+'</div>'
+      +'<div class="ids">SKU '+esc(r.sku)+' · INV# '+esc(r.inventory_number)+'</div>'
+      +'<div class="money"><b>'+money(c.landed_cost)+'</b> landed'
+      +(r.nellis_estimated_retail!=null?' <span class="muted">· Nellis retail '+money(r.nellis_estimated_retail)+'</span>':"")
+      +'</div>'
+      +'<button data-up="'+esc(r.id)+'" style="margin-top:8px;padding:8px;font-size:13px">Upload product page</button>'
+      +'</div></div>';
+  }).join("");
+}
+$("#ebayPanel").addEventListener("click",e=>{
+  const up=e.target.closest("[data-up]");
+  if(up){pendingEbayUnit=up.dataset.up;const fp=$("#labPick");fp.value="";fp.click();return;}
+  const tile=e.target.closest("[data-tid]");
+  if(tile)openUnit(tile.dataset.tid);
+});
+async function loadEx(){
+  const {data,error}=await sb.from("product_extractions")
+    .select("id,inventory_id,inventory_number,storage_path,attempt,status,block_reasons,error_text,payload,archived,created_at")
+    .order("created_at",{ascending:false}).limit(100);
+  if(error){err("Extractions load failed: "+error.message);return;}
+  exRows=data||[];
+  const {data:cd,error:ce}=await sb.from("extraction_consensus")
+    .select("storage_path,attempts,numbers,verdict,consensus_number");
+  if(ce){console.error("consensus load",ce);consMap={};}
+  else{consMap={};(cd||[]).forEach(c=>{consMap[c.storage_path]=c;});}
+  renderEx();
+}
+function consOf(x){return consMap[x&&x.storage_path]||null;}
+function exVisible(){return exRows.filter(x=>showArch?true:!x.archived);}
+function renderEx(){
+  if(exOpen){renderExDetail();return;}
+  const el=$("#exList");
+  const v=exVisible();
+  if(!v.length){el.innerHTML='<div class="muted">'
+    +(exRows.length?'No active extractions. Tick "show archived" to see them.':'No extractions yet.')
+    +'</div>';return;}
+  el.innerHTML=v.map(x=>{
+    const p=x.payload||{};
+    const title=p.title||x.inventory_number||"(untitled)";
+    const linked=x.inventory_id?"linked":"unlinked";
+    return '<div class="exrow'+(x.archived?" arch":"")+'" data-ex="'+esc(x.id)+'">'
+      +'<div class="t">'+esc(title)+'</div>'
+      +'<div class="ids">INV# '+esc(x.inventory_number||"—")+' · attempt '+x.attempt+' · '+linked
+      +(x.archived?' · archived':'')+'</div>'
+      +'<span class="st '+esc(x.status)+'">'+esc(x.status)+'</span>'
+      +(function(){const c=consOf(x);if(!c)return "";
+        const cls=c.verdict==="consensus"?"ok":c.verdict==="disagreement"?"blocked":"pending";
+        return ' <span class="st '+cls+'">'+esc(c.verdict)+'</span>';})()
+      +'</div>';
+  }).join("");
+}
+function tagList(t){
+  if(!Array.isArray(t)||!t.length)return '<div class="muted">none</div>';
+  return '<div class="tags">'+t.map(s=>'<span>'+esc(s)+'</span>').join("")+'</div>';
+}
+function renderExDetail(){
+  const x=exRows.find(r=>r.id===exOpen);
+  if(!x){exOpen=null;exUnitSel=null;renderEx();return;}
+  const p=x.payload||{};
+  const linked=x.inventory_id?rows.find(r=>r.id===x.inventory_id):null;
+  const match=linked||rows.find(r=>r.inventory_number===String(p.inventory_number||""));
+  let body='<button class="ghost" data-ex-act="back">&larr; Back to list</button>';
+  if(x.archived)body+='<div class="warn" style="margin-top:10px">This extraction is archived.</div>';
+  body+=exShot?'<img class="shot" src="'+exShot+'" alt="">':'<div class="muted" style="margin:10px 0">loading screenshot…</div>';
+  if(x.status==="blocked")body+='<div class="warn"><b>BLOCKED</b><br>'+esc(JSON.stringify(x.block_reasons))+'</div>';
+  if(x.status==="error")body+='<div class="warn"><b>ERROR</b><br>'+esc(x.error_text||"")+'</div>';
+  const cons=consOf(x);
+  if(cons&&cons.verdict==="consensus"){
+    body+='<div class="warn" style="border-color:var(--green);color:var(--green)">'
+      +'<b>CONSENSUS</b><br>Two independent extractions both read '
+      +esc(cons.consensus_number)+'. Still check the other fields against the screenshot.</div>';
+  }else if(cons&&cons.verdict==="disagreement"){
+    body+='<div class="warn bad"><b>NO CONSENSUS</b><br>'
+      +'The independent extractions did not agree: '+esc(JSON.stringify(cons.numbers))+'. '
+      +'The system will not choose between them. Read the number off the screenshot yourself, '
+      +'type it below, and tick override to promote.</div>';
+  }else if(cons&&cons.verdict==="single"){
+    body+='<div class="warn"><b>SINGLE EXTRACTION</b><br>'
+      +'Only one attempt exists for this screenshot, so there is nothing to compare against. '
+      +'Re-extract to obtain a second independent reading.</div>';
+  }else{
+    body+='<div class="warn">Check every field against the screenshot. Extraction has produced '
+       +'a wrong inventory number before.</div>';
+  }
+  const pn=String(p.inventory_number||"");
+  if(linked&&pn&&String(linked.inventory_number||"")!==pn){
+    body+='<div class="warn bad"><b>NUMBER MISMATCH</b><br>'
+      +'This upload was made against INV# '+esc(linked.inventory_number)
+      +' but the extraction read '+esc(pn)+'. Either this is the wrong product page for that unit, '
+      +'or the extraction transposed digits. Verify against the screenshot before promoting.</div>';
+  }
+  body+='<div class="lbl">Inventory number (bridge key — confirm digit by digit)</div>'
+       +'<input id="xInv" inputmode="numeric" value="'+val(p.inventory_number)+'">';
+  body+='<div class="lbl" style="margin-bottom:10px">'
+       +(linked?('Linked to SKU '+esc(linked.sku)+' — '+esc(linked.title||"")):
+         match?('Matches SKU '+esc(match.sku)+' — '+esc(match.title||"")):
+         'No matching unit. Pick one below or leave unlinked.')
+       +'</div>';
+  const opts=['<option value=""'+(String(exUnitSel||"")===""?" selected":"")+'>— no unit —</option>'].concat(rows.map(r=>
+    '<option value="'+esc(r.id)+'"'+(String(exUnitSel||"")===String(r.id)?" selected":"")+'>'
+    +esc(r.sku)+' · '+esc((r.title||"").slice(0,40))+'</option>')).join("");
+  body+='<div class="lbl">Link to unit</div><select id="xUnit">'+opts+'</select>';
+  body+='<div class="sect"><h3>NELLIS FACTS</h3>'
+    +'<div class="row2">'
+    +'<div><div class="lbl">Brand</div><input id="xBrand" value="'+val(p.brand)+'"></div>'
+    +'<div><div class="lbl">Color</div><input id="xColor" value="'+val(p.color)+'"></div>'
+    +'</div>'
+    +'<div class="lbl">Item dimensions (in) — L / W / H</div>'
+    +'<div class="row3">'
+    +'<div><input id="xL" inputmode="decimal" value="'+val(p.item_length_in)+'"></div>'
+    +'<div><input id="xW" inputmode="decimal" value="'+val(p.item_width_in)+'"></div>'
+    +'<div><input id="xH" inputmode="decimal" value="'+val(p.item_height_in)+'"></div>'
+    +'</div>'
+    +'<div class="row2">'
+    +'<div><div class="lbl">Item weight (lb)</div><input id="xIW" inputmode="decimal" value="'+val(p.item_weight_lb)+'"></div>'
+    +'<div><div class="lbl">Package weight (lb)</div><input id="xPW" inputmode="decimal" value="'+val(p.package_weight_lb)+'"></div>'
+    +'</div>'
+    +'<div class="row2">'
+    +'<div><div class="lbl">Nellis retail</div><input id="xRetail" inputmode="decimal" value="'+val(p.estimated_retail)+'"></div>'
+    +'<div><div class="lbl">Sales rank</div><input id="xRank" inputmode="decimal" value="'+val(p.sales_rank)+'"></div>'
+    +'</div>'
+    +'<div class="lbl">Condition tags (stored verbatim, not editable here)</div>'
+    +tagList(p.condition_tags)
+    +'<div class="lbl">Extracted title (not promoted — copy by hand if wanted)</div>'
+    +'<div class="muted" style="font-size:13px;margin-bottom:8px">'+esc(p.title||"—")+'</div>'
+    +'</div>';
+  const gate=cons&&cons.verdict==="consensus";
+  // E5 (dispatch 107-REM-D): render the override checkbox UNCONDITIONALLY
+  // (was if(!gate)) so it is reachable even on a consensus row; gate is
+  // still used by the button face and promoteEx, and exOverride stays
+  // default false, reset on open/back.
+  body+='<label class="toggle"><input type="checkbox" id="xOverride"'+(exOverride?" checked":"")+'> '
+    +'override — I read the number off the screenshot myself</label>';
+  body+='<button data-ex-act="promote"'+((gate||exOverride)?"":' class="ghost"')+'>'
+    +'Confirm &amp; promote to unit'+((gate||exOverride)?"":" (blocked)")+'</button>';
+  if(exNote)body+='<div class="ok" style="display:block">'+esc(exNote)+'</div>';
+  body+='<button class="ghost" data-ex-act="rerun" style="margin-top:8px">Re-extract this screenshot</button>';
+  body+='<div class="sect"><h3>ARCHIVE</h3>'
+    +(x.archived
+      ? '<button class="ghost" data-ex-act="unarch">Restore to active list</button>'
+      : '<button class="'+(exArm?"armed":"danger")+'" data-ex-act="arch">'
+        +(exArm?"Really archive? Tap again":"Archive this extraction")+'</button>')
+    +'<div class="lbl" style="margin-top:6px">Hides it from the list. Screenshot and record are kept.</div>'
+    +'</div>';
+  $("#exList").innerHTML=body;
+}
+async function openEx(id){
+  exOpen=id;exShot=null;exNote="";exArm=false;exOverride=false;
+  const x=exRows.find(r=>r.id===id);
+  // E4: initialize the dropdown selection ONCE per open (existing link,
+  // else the exact inventory-number match, else none). Every later
+  // rebuild restores from exUnitSel, never re-derives from match.
+  if(x){const p=x.payload||{};
+    exUnitSel=x.inventory_id
+      ||((rows.find(r=>String(r.inventory_number||"")===String(p.inventory_number||"")))||{}).id
+      ||"";}
+  else{exUnitSel="";}
+  renderEx();
+  if(!x)return;
+  const {data}=await sb.storage.from("product-shots").createSignedUrl(x.storage_path,3600);
+  exShot=(data&&data.signedUrl)||null;
+  if(exOpen===id)renderEx();
+}
+async function setArchived(flag){
+  const x=exRows.find(r=>r.id===exOpen);
+  if(!x)return;
+  err("");
+  try{
+    const {error:e1}=await sb.from("product_extractions").update({archived:flag}).eq("id",x.id);
+    if(e1)throw new Error("Archive failed: "+e1.message);
+    exArm=false;
+    await loadEx();
+    if(flag){exOpen=null;exShot=null;exUnitSel=null;}
+    renderEx();
+  }catch(ex){console.error("setArchived",ex);exArm=false;renderEx();err(ex.message||String(ex));}
+}
+async function promoteEx(){
+  const x=exRows.find(r=>r.id===exOpen);
+  if(!x)return;
+  err("");
+  const invNum=txt("#xInv");
+  const unitId=exUnitSel||"";   // E4: from sticky state, not the DOM
+  if(!invNum){err("Inventory number is required.");return;}
+  if(!unitId){err("Pick a unit to link, or this extraction has nothing to promote to.");return;}
+  // Option C (dispatch 107): a typed/extracted number that does not match
+  // the SELECTED unit's inventory_number hard-blocks the link unless the
+  // override checkbox is explicitly ticked.
+  const selUnit=rows.find(r=>r.id===unitId);
+  const selNum=selUnit?String(selUnit.inventory_number||""):null;
+  if(!exOverride&&selNum!==invNum){
+    err("Number mismatch: extraction/typed "+invNum+" vs unit "+(selUnit?(selUnit.inventory_number||"?"):"(unit not loaded)")+". Tick override to link anyway.");
+    return;
+  }
+  const cons=consOf(x);
+  const gate=cons&&cons.verdict==="consensus";
+  if(!gate&&!exOverride){
+    err("No consensus on the inventory number. Re-extract, or tick override after reading the number off the screenshot yourself.");
+    return;
+  }
+  if(gate&&cons.consensus_number&&invNum!==String(cons.consensus_number)){
+    err("The number you typed does not match the consensus number "+cons.consensus_number+". Tick override if you are deliberately correcting it.");
+    if(!exOverride)return;
+  }
+  const tags=(x.payload||{}).condition_tags;
+  const patch={
+    nellis_brand:txt("#xBrand"),nellis_color:txt("#xColor"),
+    nellis_item_length_in:num("#xL"),nellis_item_width_in:num("#xW"),nellis_item_height_in:num("#xH"),
+    nellis_item_weight_lb:num("#xIW"),nellis_package_weight_lb:num("#xPW"),
+    nellis_estimated_retail:num("#xRetail"),nellis_sales_rank:num("#xRank"),
+    nellis_condition_tags:Array.isArray(tags)?tags:null
+  };
+  try{
+    const {error:e1}=await sb.from("inventory").update(patch).eq("id",unitId);
+    if(e1)throw new Error("Promote failed: "+e1.message);
+    const {error:e2}=await sb.from("product_extractions")
+      .update({inventory_id:unitId,inventory_number:invNum}).eq("id",x.id);
+    if(e2)throw new Error("Unit updated but extraction link failed: "+e2.message);
+    await load();await loadEx();
+    exNote=(consOf(x)&&consOf(x).verdict==="consensus"&&!exOverride)
+      ?"Promoted on consensus."
+      :"Promoted by override — no machine consensus on the number.";
+    exOverride=false;renderEx();
+  }catch(ex){console.error("promoteEx",ex);err(ex.message||String(ex));}
+}
+async function runExtract(path,linkUnitId){
+  $("#upStat").textContent="extracting…";
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    if(!session)throw new Error("no session");
+    const res=await fetch(SB_URL+"/functions/v1/extract-product",{
+      method:"POST",
+      headers:{"Content-Type":"application/json",
+        "Authorization":"Bearer "+session.access_token,"apikey":SB_KEY},
+      body:JSON.stringify({storage_path:path})
+    });
+    const out=await res.json().catch(()=>({error:"bad response"}));
+    if(!res.ok)throw new Error(out.error||("http "+res.status));
+    let linkedNote="";
+    if(linkUnitId){
+      // Option C (dispatch 107): link ONLY when the extracted inventory
+      // number equals the target unit's, and update the NEW attempt row
+      // BY ROW ID (never by storage_path, which would relink siblings).
+      // the NEW attempt row: id AND number read from the SAME row so
+      // the equality check and the update target can never diverge
+      // (QA-20260907-040323 f1). No reliance on the function response id.
+      const {data:latest}=await sb.from("product_extractions")
+        .select("id,inventory_number").eq("storage_path",path)
+        .order("attempt",{ascending:false}).limit(1);
+      const nr=(latest&&latest[0])||null;
+      const newRowId=nr?nr.id:null;
+      const extracted=nr?nr.inventory_number:null;
+      // target unit number by FRESH select, not the cached rows[]
+      const {data:unit}=await sb.from("inventory")
+        .select("inventory_number").eq("id",linkUnitId).limit(1);
+      const unitNum=(unit&&unit[0])?unit[0].inventory_number:null;
+      const ex=(extracted==null)?"":String(extracted);
+      const un=(unitNum==null)?"":String(unitNum);
+      if(newRowId&&ex!==""&&un!==""&&ex===un){
+        const {error:lnErr}=await sb.from("product_extractions")
+          .update({inventory_id:linkUnitId}).eq("id",newRowId);
+        if(lnErr){console.error("link failed",lnErr);
+          $("#upStat").textContent="done (status "+out.status+") but linking failed: "+lnErr.message;
+          exOpen=null;exShot=null;await loadEx();return;}
+        linkedNote=" · linked to unit";
+      }else{
+        $("#upStat").textContent=(ex==="")
+          ?"done — status: "+out.status+" · NOT linked: no number read"
+          :"done — status: "+out.status+" · NOT linked: extraction read "+ex+", unit is "+(un===""?"?":un);
+        exOpen=null;exShot=null;await loadEx();return;
+      }
+    }
+    $("#upStat").textContent="done — status: "+out.status+linkedNote;
+    exOpen=null;exShot=null;
+    await loadEx();
+  }catch(ex){console.error("runExtract",ex);$("#upStat").textContent="ERROR: "+(ex.message||ex);}
+}
+$("#labPick").onchange=async e=>{
+  const f=(e.target.files||[])[0];
+  const unitId=pendingEbayUnit;pendingEbayUnit=null;
+  if(!f)return;
+  $("#upStat").textContent="uploading…";
+  try{
+    const ext=(f.name.split(".").pop()||"jpg").toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,5)||"jpg";
+    const path="nellis/"+Date.now()+"-"+Math.random().toString(36).slice(2,8)+"."+ext;
+    const {error:upErr}=await sb.storage.from("product-shots")
+      .upload(path,f,{contentType:f.type||"image/jpeg",upsert:false});
+    if(upErr)throw new Error("Upload failed: "+upErr.message);
+    await runExtract(path,unitId);
+  }catch(ex){console.error("labUpload",ex);$("#upStat").textContent="ERROR: "+(ex.message||ex);}
+};
+$("#exRefresh").onclick=loadEx;
+$("#showArch").onchange=e=>{showArch=e.target.checked;exOpen=null;exShot=null;exUnitSel=null;renderEx();};
+$("#exList").addEventListener("change",e=>{
+  if(e.target&&e.target.id==="xUnit"){exUnitSel=e.target.value;return;}  // E4: persist, no rebuild
+  if(e.target&&e.target.id==="xOverride"){exOverride=e.target.checked;renderEx();}
+});
+$("#exList").addEventListener("click",e=>{
+  const b=e.target.closest("[data-ex-act]");
+  if(b){
+    const a=b.dataset.exAct;
+    if(a!=="arch"&&exArm)exArm=false;
+    if(a==="back"){exOpen=null;exShot=null;exNote="";exArm=false;exOverride=false;exUnitSel=null;renderEx();}
+    else if(a==="promote")promoteEx();
+    else if(a==="rerun"){const x=exRows.find(r=>r.id===exOpen);
+      if(x){$("#upStat").textContent="";runExtract(x.storage_path,null);}}
+    else if(a==="arch"){if(!exArm){exArm=true;renderEx();}else setArchived(true);}
+    else if(a==="unarch")setArchived(false);
+    return;
+  }
+  const row=e.target.closest("[data-ex]");
+  if(row)openEx(row.dataset.ex);
+});
+</script>
+<script>
+function pricingBlock(r){
+  const s=solvePrice(r);
+  if(!s.ok)return '<div class="sect"><h3>SUGGESTED PRICE</h3>'
+    +'<div class="warn">Cannot calculate: '+esc(s.why)+'</div></div>';
+  let h='<div class="sect"><h3>SUGGESTED PRICE</h3>';
+  if(s.provisional)h+='<div class="warn"><b>PROVISIONAL</b><br>'+esc(s.reason)
+    +' This price is not authoritative until a category rate is set.</div>';
+  h+='<div class="bigprice">'+money(s.price)+'</div>'
+    +'<div class="costs">'
+    +'<div><span>Landed cost</span><span>'+money(s.L)+'</span></div>'
+    +'<div><span>Packaging</span><span>'+money(s.G)+'</span></div>'
+    +'<div><span>Assumed shipping (buyer pays)</span><span>'+money(s.S)+'</span></div>'
+    +'<div><span>Assumed tax @ '+(s.t*100).toFixed(1)+'%</span><span>'+money(s.tax)+'</span></div>'
+    +'<div><span>Fee base</span><span>'+money(s.feeBase)+'</span></div>'
+    +'<div><span>eBay fee @ '+(s.f*100).toFixed(2)+'%</span><span>-'+money(s.fvf).slice(1)+'</span></div>'
+    +'<div><span>Per-order fee</span><span>-'+money(s.k).slice(1)+'</span></div>'
+    +'<div><span><b>Net to you</b></span><span><b>'+money(s.net)+'</b></span></div>'
+    +'<div class="frozen">rate: '+esc(s.label)+' · target not guarantee</div>'
+    +'</div>'
+    +'<button data-act="useprice" data-p="'+s.price.toFixed(2)+'" style="margin-top:10px">Use this price</button>'
+    +'</div>';
+  return h;
+}
+function renderModal(){
+  const m=$("#modal");
+  if(!modalId){m.classList.remove("on");$("#sheet").innerHTML="";armArchive=false;saveNote="";return;}
+  const r=rows.find(x=>x.id===modalId);
+  if(!r){m.classList.remove("on");return;}
+  const list=photoRows(r),c=cost(r);
+  let cells=list.map(p=>{
+    const u=modalUrls[p.id];
+    const img=u?'<img src="'+u+'" alt="">':'<div class="pad muted">loading…</div>';
+    let ctrl="";
+    if(mode==="owner"){
+      ctrl='<div class="pad">'
+        +(p.is_primary?'<span class="isprim">MAIN PHOTO</span>'
+          :'<button class="main" data-act="main" data-pid="'+esc(p.id)+'">Make main</button>')
+        +'<button class="del" data-act="del" data-pid="'+esc(p.id)+'">Delete</button></div>';
+    }
+    return '<div class="cellwrap">'+img+ctrl+'</div>';
+  }).join("");
+  if(!cells)cells='<div class="muted">No photos yet.</div>';
+  let body='<h2>'+(esc(r.title)||"untitled")+'</h2>'
+    +'<div class="ids">SKU '+esc(r.sku)+' · INV# '+esc(r.inventory_number)+'</div>'
+    +'<div class="grid">'+cells+'</div>';
+  if(mode==="owner"){
+    body+='<button data-act="add">+ Add photos</button>';
+    body+='<div class="sect"><h3>EBAY TRACK</h3>'
+      +'<button data-act="track"'+(r.ebay_tracked?' class="ghost"':'')+'>'
+      +(r.ebay_tracked?'Remove from eBay track':'Push to eBay track')+'</button>'
+      +'<div class="lbl" style="margin-top:6px">'
+      +(r.ebay_tracked?'This unit is listed in the eBay tab.':'Adds this unit to the eBay tab for product-page upload and pricing.')
+      +'</div></div>';
+    body+='<div class="sect"><h3>DETAILS</h3>'
+      +'<div class="lbl">Title</div><input id="fTitle" value="'+val(r.title)+'">'
+      +'<div class="row2">'
+      +'<div><div class="lbl">Brand</div><input id="fBrand" value="'+val(r.brand)+'"></div>'
+      +'<div><div class="lbl">Model</div><input id="fModel" value="'+val(r.model)+'"></div>'
+      +'</div>'
+      +'<div class="row2">'
+      +'<div><div class="lbl">Condition</div><input id="fCond" value="'+val(r.condition)+'"></div>'
+      +'<div><div class="lbl">Category</div><input id="fCat" value="'+val(r.category)+'"></div>'
+      +'</div>'
+      +'<div class="row2">'
+      +'<div><div class="lbl">Location</div><input id="fLoc" value="'+val(r.storage_location)+'"></div>'
+      +'<div><div class="lbl">Status</div><select id="fStatus">'
+      +'<option value="available"'+(r.status==="available"?" selected":"")+'>available</option>'
+      +'<option value="sold"'+(r.status==="sold"?" selected":"")+'>sold</option>'
+      +'</select></div>'
+      +'</div>'
+      +'<div class="lbl">Internal notes</div><textarea id="fNotes">'+val(r.internal_notes)+'</textarea>'
+      +'</div>';
+    body+=pricingBlock(r);
+    body+='<div class="sect"><h3>PRICES</h3>'
+      +'<div class="row2">'
+      +'<div><div class="lbl">Retail price</div>'
+      +'<input id="pRetail" type="number" step="0.01" inputmode="decimal" placeholder="—" value="'
+      +(r.selling_price==null?"":esc(r.selling_price))+'"></div>'
+      +'<div><div class="lbl">Wholesale price</div>'
+      +'<input id="pWhole" type="number" step="0.01" inputmode="decimal" placeholder="—" value="'
+      +(c.wholesale_price==null?"":esc(c.wholesale_price))+'"></div>'
+      +'</div>'
+      +'<div class="lbl">Packaging cost (blank = default '+money(PACKAGING_COST)+')</div>'
+      +'<input id="pPack" type="number" step="0.01" inputmode="decimal" placeholder="'+PACKAGING_COST.toFixed(2)+'" value="'
+      +(r.packaging_cost==null?"":esc(r.packaging_cost))+'">'
+      +'</div>';
+    body+='<button data-act="save">Save changes</button>';
+    if(saveNote)body+='<div class="ok" style="display:block">'+esc(saveNote)+'</div>';
+    const hasNellis = r.nellis_brand||r.nellis_item_length_in||r.nellis_package_weight_lb
+      ||(Array.isArray(r.nellis_condition_tags)&&r.nellis_condition_tags.length);
+    if(hasNellis){
+      body+='<div class="sect"><h3>NELLIS DATA — PROMOTED</h3><div class="costs">'
+        +'<div><span>Brand</span><span>'+(esc(r.nellis_brand)||"—")+'</span></div>'
+        +'<div><span>Color</span><span>'+(esc(r.nellis_color)||"—")+'</span></div>'
+        +'<div><span>Item L×W×H</span><span>'+(r.nellis_item_length_in==null?"—":
+          esc(r.nellis_item_length_in)+" × "+esc(r.nellis_item_width_in)+" × "+esc(r.nellis_item_height_in))+'</span></div>'
+        +'<div><span>Item weight</span><span>'+(r.nellis_item_weight_lb==null?"—":esc(r.nellis_item_weight_lb)+" lb")+'</span></div>'
+        +'<div><span>Package weight</span><span>'+(r.nellis_package_weight_lb==null?"—":esc(r.nellis_package_weight_lb)+" lb")+'</span></div>'
+        +'<div><span>Nellis retail</span><span>'+money(r.nellis_estimated_retail)+'</span></div>'
+        +'</div>'+tagList(r.nellis_condition_tags)+'</div>';
+    }
+    body+='<div class="sect"><h3>COST — FROZEN AT APPROVAL</h3><div class="costs">'
+      +'<div><span>Hammer</span><span>'+money(c.hammer_cost)+'</span></div>'
+      +'<div><span>Buyer premium</span><span>'+money(c.buyer_premium_cost)+'</span></div>'
+      +'<div><span>Tax</span><span>'+money(c.tax_cost)+'</span></div>'
+      +'<div><span><b>Landed</b></span><span><b>'+money(c.landed_cost)+'</b></span></div>'
+      +'<div class="frozen">read-only · provenance</div>'
+      +'</div></div>';
+    body+='<div class="sect"><h3>ARCHIVE</h3>'
+      +'<button class="'+(armArchive?"armed":"danger")+'" data-act="arch">'
+      +(armArchive?"Really archive? Tap again":"Archive this unit")+'</button>'
+      +'<div class="lbl" style="margin-top:6px">Hides the unit from this viewer. Not reversible here.</div>'
+      +'</div>';
+  }
+  body+='<button class="ghost" data-act="close" style="margin-top:10px">Close</button>';
+  $("#sheet").innerHTML=body;
+  m.classList.add("on");
+}
+async function openUnit(id){
+  modalId=id;armArchive=false;saveNote="";renderModal();
+  const r=rows.find(x=>x.id===id);
+  if(!r)return;
+  let changed=false;
+  for(const p of photoRows(r)){
+    if(modalUrls[p.id]!==undefined)continue;
+    const path=pathOf(p);
+    if(!path){modalUrls[p.id]=null;continue;}
+    const {data}=await sb.storage.from("photos-internal").createSignedUrl(path,3600);
+    modalUrls[p.id]=(data&&data.signedUrl)||null;changed=true;
+  }
+  if(changed&&modalId===id)renderModal();
+}
+async function reopen(id,note){await load();modalId=id;saveNote=note||"";await openUnit(id);
+  if(note){saveNote=note;renderModal();}}
+
+async function deletePhoto(pid){
+  if(!confirm("Delete this photo? This cannot be undone."))return;
+  const id=modalId,r=rows.find(x=>x.id===id);
+  const p=r?photoRows(r).find(x=>x.id===pid):null;
+  err("");
+  try{
+    const {error:dErr}=await sb.from("inventory_photos").delete().eq("id",pid);
+    if(dErr)throw new Error("Delete failed: "+dErr.message);
+    const path=p?pathOf(p):null;
+    if(path){const {error:sErr}=await sb.storage.from("photos-internal").remove([path]);
+      if(sErr)console.error("storage remove failed",sErr);}
+    await reopen(id);
+  }catch(ex){console.error("deletePhoto",ex);err(ex.message||String(ex));}
+}
+async function setMain(pid){
+  const id=modalId;err("");
+  try{
+    const {error:e1}=await sb.from("inventory_photos").update({is_primary:false}).eq("inventory_id",id);
+    if(e1)throw new Error("Update failed: "+e1.message);
+    const {error:e2}=await sb.from("inventory_photos").update({is_primary:true}).eq("id",pid);
+    if(e2)throw new Error("Update failed: "+e2.message);
+    await reopen(id);
+  }catch(ex){console.error("setMain",ex);err(ex.message||String(ex));}
+}
+async function toggleTrack(){
+  const id=modalId;
+  const r=rows.find(x=>x.id===id);
+  if(!r)return;
+  err("");
+  try{
+    const {error:e1}=await sb.from("inventory").update({ebay_tracked:!r.ebay_tracked}).eq("id",id);
+    if(e1)throw new Error("Update failed: "+e1.message);
+    await reopen(id,r.ebay_tracked?"Removed from eBay track.":"Pushed to eBay track.");
+  }catch(ex){console.error("toggleTrack",ex);err(ex.message||String(ex));}
+}
+async function saveAll(){
+  const id=modalId;err("");
+  const rv=($("#pRetail")?$("#pRetail").value:"").trim();
+  const wv=($("#pWhole")?$("#pWhole").value:"").trim();
+  const pk=($("#pPack")?$("#pPack").value:"").trim();
+  const retail=rv===""?null:Number(rv);
+  const whole=wv===""?null:Number(wv);
+  const pack=pk===""?null:Number(pk);
+  if(retail!==null&&!isFinite(retail)){err("Retail price is not a number.");return;}
+  if(whole!==null&&!isFinite(whole)){err("Wholesale price is not a number.");return;}
+  if(pack!==null&&!isFinite(pack)){err("Packaging cost is not a number.");return;}
+  const st=$("#fStatus")?$("#fStatus").value:null;
+  if(st!=="available"&&st!=="sold"){err("Status must be available or sold.");return;}
+  const patch={title:txt("#fTitle"),brand:txt("#fBrand"),model:txt("#fModel"),
+    condition:txt("#fCond"),category:txt("#fCat"),storage_location:txt("#fLoc"),
+    internal_notes:txt("#fNotes"),status:st,selling_price:retail,packaging_cost:pack};
+  try{
+    const {error:e1}=await sb.from("inventory").update(patch).eq("id",id);
+    if(e1)throw new Error("Save failed: "+e1.message);
+    const {error:e2}=await sb.from("inventory_costs").update({wholesale_price:whole}).eq("inventory_id",id);
+    if(e2)throw new Error("Details saved, wholesale price failed: "+e2.message);
+    await reopen(id,"Saved.");
+  }catch(ex){console.error("saveAll",ex);err(ex.message||String(ex));}
+}
+async function archiveUnit(){
+  if(!armArchive){armArchive=true;renderModal();return;}
+  const id=modalId;err("");
+  try{
+    const {error:e1}=await sb.from("inventory").update({archived:true}).eq("id",id);
+    if(e1)throw new Error("Archive failed: "+e1.message);
+    modalId=null;renderModal();await load();
+  }catch(ex){console.error("archiveUnit",ex);armArchive=false;renderModal();err(ex.message||String(ex));}
+}
+
+$("#modal").addEventListener("click",e=>{
+  if(e.target.id==="modal"){modalId=null;renderModal();return;}
+  const b=e.target.closest("button");
+  if(!b){if(armArchive){armArchive=false;renderModal();}return;}
+  const act=b.dataset.act;
+  if(act!=="arch"&&armArchive){armArchive=false;renderModal();}
+  if(act==="close"){modalId=null;renderModal();}
+  else if(act==="add"){pendingId=modalId;const fp=$("#filePick");fp.value="";fp.click();}
+  else if(act==="del")deletePhoto(b.dataset.pid);
+  else if(act==="main")setMain(b.dataset.pid);
+  else if(act==="save")saveAll();
+  else if(act==="arch")archiveUnit();
+  else if(act==="track")toggleTrack();
+  else if(act==="useprice"){const el=$("#pRetail");if(el){el.value=b.dataset.p;
+    el.scrollIntoView({block:"center"});}}
+});
+
+$("#list").addEventListener("click",e=>{
+  const ck=e.target.closest("[data-ck]");
+  if(ck){toggleCheck(ck.dataset.ck);return;}
+  const tile=e.target.closest(".ph");
+  if(!tile)return;
+  const id=tile.dataset.id;
+  if(!id||busy[id])return;
+  openUnit(id);
+});
+
+$("#filePick").onchange=async e=>{
+  const files=Array.from(e.target.files||[]);
+  const id=pendingId;pendingId=null;
+  if(!id||!files.length)return;
+  await uploadPhotos(id,files);
+};
+
+async function uploadPhotos(id,files){
+  err("");
+  const row=rows.find(r=>r.id===id);
+  if(!row){err("Unit not found.");return;}
+  busy[id]=true;render();
+  try{
+    const existing=photoRows(row);
+    let next=existing.reduce((m,p)=>Math.max(m,p.sort_order==null?0:p.sort_order),0)+1;
+    const inserts=[];
+    for(const f of files){
+      const ext=(f.name.split(".").pop()||"jpg").toLowerCase().replace(/[^a-z0-9]/g,"").slice(0,5)||"jpg";
+      const path="units/"+(row.sku||"nosku")+"/"+Date.now()+"-"+Math.random().toString(36).slice(2,8)+"."+ext;
+      const {error:upErr}=await sb.storage.from("photos-internal")
+        .upload(path,f,{contentType:f.type||"image/jpeg",upsert:false});
+      if(upErr)throw new Error("Upload failed: "+upErr.message);
+      inserts.push({inventory_id:id,storage_path:path,source_url:path,
+        sort_order:next++,is_primary:false,is_public:false});
+    }
+    const {error:insErr}=await sb.from("inventory_photos").insert(inserts);
+    if(insErr)throw new Error("Saved file but DB insert failed: "+insErr.message);
+    busy[id]=false;
+    if(modalId===id)await reopen(id); else await load();
+  }catch(ex){
+    console.error("uploadPhotos",ex);
+    busy[id]=false;render();
+    err(ex.message||String(ex));
+  }
+}
+
+$("#q").oninput=e=>{q=e.target.value.trim().toLowerCase();render();};
+document.querySelectorAll(".filters button").forEach(b=>{
+  b.onclick=()=>{document.querySelectorAll(".filters button").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");filter=b.dataset.f;render();};
+});
+document.querySelectorAll(".modebar button").forEach(b=>{
+  b.onclick=()=>{document.querySelectorAll(".modebar button").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");mode=b.dataset.m;
+    if(mode==="ebay"&&!exRows.length)loadEx(); else render();
+    if(mode==="ebay")render();
+    if(mode==="exempt")loadExempt();
+    if(modalId)renderModal();};
+});
+boot();
+</script>
+</body>
+</html>
