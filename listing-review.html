@@ -14,7 +14,7 @@
 <div id="detail"></div><div id="error" class="warn bad" style="display:none"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-const SB_URL="https://fuebtrlaroowedjxjucn.supabase.co",SB_KEY="sb_publishable_-CrujyffVlSXhnst670YEA_-0aRK4Ti";const sb=window.supabase.createClient(SB_URL,SB_KEY);const $=s=>document.querySelector(s);let rows=[],filter="all",current=null,photoDraft=[];
+const SB_URL="https://fuebtrlaroowedjxjucn.supabase.co",SB_KEY="sb_publishable_-CrujyffVlSXhnst670YEA_-0aRK4Ti";const sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{storageKey:"rapidstock-owner-v2"}});const $=s=>document.querySelector(s);let rows=[],filter="all",current=null,photoDraft=[];
 const esc=s=>s==null?"":String(s).replace(/[&<>\"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));const money=v=>v==null?"—":"$"+Number(v).toFixed(2);function fail(m){const e=$("#error");e.textContent=m||"";e.style.display=m?"block":"none";if(m)e.scrollIntoView({block:"center"})}
 function label(x){return ({required_aspects_missing:"Required eBay item specific needs your choice",packed_weight_missing:"Package weight is missing",real_photo_missing:"No real item photo is available",packed_dimensions_estimated:"Package dimensions are estimated (not a blocker)",only_one_real_item_photo:"Only one real Nellis item photo is available"})[x]||String(x).replaceAll("_"," ")}
 async function boot(){const {data:{session}}=await sb.auth.getSession();if(!session){$("#login").hidden=false;return}await loadQueue()}
